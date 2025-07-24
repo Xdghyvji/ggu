@@ -1,80 +1,88 @@
-const axios = require("axios");
-const admin = require("firebase-admin");
+// netlify/functions/createPaymentSession.js
 
-// Securely load the Firebase service account key from environment variables
-const serviceAccount = JSON.parse(Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_KEY, 'base64').toString('utf-8'));
+const admin = require('firebase-admin');
+const axios = require('axios');
 
-// Initialize Firebase Admin SDK only once
+// Initialize Firebase Admin SDK
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
+    projectId: process.env.FIREBASE_PROJECT_ID,
   });
 }
-
 const db = admin.firestore();
 
-exports.handler = async (event) => {
-  if (event.httpMethod !== "POST") {
-    return { statusCode: 405, body: "Method Not Allowed" };
+exports.handler = async (event, context) => {
+  if (event.httpMethod !== 'POST') {
+    return { statusCode: 405, body: 'Method Not Allowed' };
   }
 
   try {
-    const { amount, userId, userEmail } = JSON.parse(event.body);
+    // Authenticate the user
+    const { authorization } = event.headers;
+    if (!authorization || !authorization.startsWith('Bearer ')) {
+      return { statusCode: 401, body: 'Unauthorized: No token provided.' };
+    }
+    const idToken = authorization.split('Bearer ')[1];
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const userId = decodedToken.uid;
+    const userEmail = decodedToken.email;
 
-    if (!amount || !userId || !userEmail || amount < 10) {
-      return { statusCode: 400, body: JSON.stringify({ message: "Invalid request data." }) };
+    // Get amount from the request body
+    const { amount } = JSON.parse(event.body);
+    const paymentAmount = parseFloat(amount);
+
+    if (isNaN(paymentAmount) || paymentAmount <= 0) {
+      return { statusCode: 400, body: 'Invalid amount.' };
     }
 
-    // Get the PUBLIC key from Netlify's environment variables
-    const publicKey = process.env.WORKUO_PAY_PUBLIC_KEY;
-    if (!publicKey) {
-        console.error("Workuo Pay PUBLIC key is not set in environment variables.");
-        return { statusCode: 500, body: JSON.stringify({ message: "Payment processor not configured." }) };
-    }
+    // Create a unique identifier for this transaction
+    const transactionRef = db.collection('users').doc(userId).collection('transactions').doc();
+    const identifier = transactionRef.id;
 
-    const internalTransactionRef = db.collection("users").doc(userId).collection("transactions").doc();
-    const transactionId = internalTransactionRef.id;
-
-    // Prepare the payload EXACTLY as per Workup Pay documentation
-    const workuoPayPayload = {
-        public_key: publicKey,
-        identifier: transactionId, // Use our unique Firestore ID as the identifier
-        currency: "PKR",
-        amount: amount,
-        details: `SMM Panel fund request for ${userEmail}`,
-        ipn_url: `https://arhamshop.site/.netlify/functions/paymentWebhook`,
-        success_url: `https://arhamshop.site/transactions`,
-        cancel_url: `https://arhamshop.site/addFunds`,
-        site_logo: 'https://arhamshop.site/logo.png', // Make sure you have a logo at this URL
-        checkout_theme: 'light',
-        customer_name: userData.name || userEmail.split('@')[0],
-        customer_email: userEmail,
+    const parameters = {
+      public_key: process.env.WORKUP_PAY_PUBLIC_KEY,
+      identifier: identifier,
+      currency: 'PKR',
+      amount: paymentAmount.toFixed(2),
+      details: `Fund deposit for user ${userId}`,
+      ipn_url: `${process.env.YOUR_APP_URL}/.netlify/functions/handleWorkupPayIPN`,
+      success_url: `${process.env.YOUR_APP_URL}/transactions?status=success`,
+      cancel_url: `${process.env.YOUR_APP_URL}/transactions?status=cancelled`,
+      site_logo: `${process.env.YOUR_APP_URL}/logo.png`,
+      checkout_theme: 'light',
+      customer_name: decodedToken.name || 'SMM User',
+      customer_email: userEmail,
     };
 
-    // Use the correct LIVE endpoint from the documentation
-    const response = await axios.post("https://workuppay.co/payment/initiate", workuoPayPayload);
+    // Create the pending transaction document
+    await transactionRef.set({
+      userId: userId,
+      amount: paymentAmount,
+      status: 'pending',
+      gateway: 'WorkupPay',
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
 
-    if (response.data && response.data.url) {
-      await internalTransactionRef.set({
-        amount: amount,
-        status: "pending",
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        gateway: "Workuo Pay",
-        gatewayTransactionId: null, // We will get this in the webhook
-      });
+    // Call Workup Pay API
+    const response = await axios.post('https://workuppay.co/payment/initiate', parameters);
 
+    if (response.data.success === 'ok' && response.data.url) {
       return {
         statusCode: 200,
         body: JSON.stringify({ paymentUrl: response.data.url }),
       };
     } else {
-      throw new Error(response.data.message || "Invalid response from payment gateway.");
+      await transactionRef.update({ status: 'failed', failureReason: response.data.message });
+      return { statusCode: 500, body: JSON.stringify({ error: response.data.message || 'Failed to initiate payment.' }) };
     }
   } catch (error) {
-    console.error("Error creating payment session:", error.response ? error.response.data : error.message);
+    console.error('Error:', error);
     return {
-      statusCode: 500,
-      body: JSON.stringify({ message: "Could not initiate payment. Please try again later." }),
+      statusCode: error.code === 'auth/id-token-expired' ? 401 : 500,
+      body: JSON.stringify({ error: error.message || 'An internal error occurred.' }),
     };
   }
 };

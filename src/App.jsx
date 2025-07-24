@@ -40,6 +40,7 @@ import {
 } from 'firebase/firestore';
 
 // --- Firebase Configuration ---
+// IMPORTANT: It's best practice to store these in environment variables
 const firebaseConfig = {
     apiKey: "AIzaSyBgjU9fzFsfx6-gv4p0WWH77_U5BPk69A0",
     authDomain: "smmp-4b3cc.firebaseapp.com",
@@ -550,11 +551,11 @@ function LandingPage({ setView, template }) {
             return (
                  <div className="min-h-screen bg-gray-50 text-slate-800 font-sans">
                      <header className="p-4 flex justify-between items-center container mx-auto bg-white shadow-md">
-                       <h1 className="text-xl font-bold text-blue-800">GET GROW UP | Corporate</h1>
-                       <div>
+                        <h1 className="text-xl font-bold text-blue-800">GET GROW UP | Corporate</h1>
+                        <div>
                              <button onClick={() => setView('auth')} className="px-4 py-2 text-sm font-semibold rounded-md text-blue-700 hover:bg-blue-50">Login</button>
                             <button onClick={() => setView('auth')} className="ml-2 px-4 py-2 text-sm font-semibold rounded-md bg-blue-700 text-white hover:bg-blue-800">Get a Quote</button>
-                       </div>
+                        </div>
                      </header>
                      <main className="container mx-auto grid md:grid-cols-2 gap-12 items-center py-20 px-4">
                          <div>
@@ -568,7 +569,7 @@ function LandingPage({ setView, template }) {
                              <img src="https://placehold.co/600x400/ffffff/3b82f6?text=Analytics" alt="Analytics graph" className="rounded-md"/>
                          </div>
                      </main>
-                </div>
+                 </div>
             );
         default:
             return (
@@ -721,13 +722,13 @@ function LoginPage({ setView, showAlert, template }) {
                              <h2 className="text-3xl font-bold text-gray-800 mb-2">{isLoginView ? 'Sign In to Your Account' : 'Create a New Account'}</h2>
                              <p className="text-gray-600 mb-6">Manage your social media growth strategy.</p>
                            {error && <p className="bg-red-100 text-red-700 p-3 rounded-lg text-sm mb-4">{error}</p>}
-                          <form onSubmit={handleEmailPasswordSubmit} className="space-y-4">
+                           <form onSubmit={handleEmailPasswordSubmit} className="space-y-4">
                                <input type="email" placeholder="business.email@example.com" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 transition" required />
                                <input type={showPassword ? "text" : "password"} placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 transition" required />
                                <button type="submit" className="w-full bg-blue-700 text-white font-bold py-3 rounded-md hover:bg-blue-800 transition">{isLoginView ? 'Sign In' : 'Create Account'}</button>
-                          </form>
-                          <button onClick={handleGoogleSignIn} className="w-full mt-4 flex items-center justify-center py-3 border border-gray-300 rounded-md hover:bg-gray-50 transition"><img className="w-5 h-5 mr-3" src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google logo" />Continue with Google</button>
-                          <p className="text-sm text-center text-gray-500 mt-6">{isLoginView ? "Don't have an account?" : "Already have an account?"}<button onClick={() => { setIsLoginView(!isLoginView); setError(''); }} className="font-semibold text-blue-700 hover:underline ml-1">{isLoginView ? 'Sign Up' : 'Login'}</button></p>
+                           </form>
+                           <button onClick={handleGoogleSignIn} className="w-full mt-4 flex items-center justify-center py-3 border border-gray-300 rounded-md hover:bg-gray-50 transition"><img className="w-5 h-5 mr-3" src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google logo" />Continue with Google</button>
+                           <p className="text-sm text-center text-gray-500 mt-6">{isLoginView ? "Don't have an account?" : "Already have an account?"}<button onClick={() => { setIsLoginView(!isLoginView); setError(''); }} className="font-semibold text-blue-700 hover:underline ml-1">{isLoginView ? 'Sign Up' : 'Login'}</button></p>
                          </div>
                      </div>
                  </div>
@@ -824,25 +825,17 @@ function FloatingWhatsAppButton() {
     )
 }
 
-// --- Automated Payment Gateway Component ---
+// --- Automated Payment Gateway Component (UPDATED FOR NETLIFY) ---
 function AutomatedPaymentGateway({ user, showAlert }) {
     const [amount, setAmount] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     
-    // IMPORTANT: Replace 'smmp-4b3cc' with your actual Firebase project ID.
-    const CLOUD_FUNCTION_URL = 'https://us-central1-smmp-4b3cc.cloudfunctions.net/createPaymentSession';
-
     const handlePaymentSubmit = async (e) => {
         e.preventDefault();
         const paymentAmount = parseFloat(amount);
 
-        if (isNaN(paymentAmount) || paymentAmount <= 0) {
-            setError('Please enter a valid amount.');
-            return;
-        }
-
-        if (paymentAmount < 10) {
+        if (isNaN(paymentAmount) || paymentAmount < 10) {
             setError('Minimum deposit amount is Rs10.');
             return;
         }
@@ -851,33 +844,38 @@ function AutomatedPaymentGateway({ user, showAlert }) {
         setError('');
 
         try {
-            const response = await fetch(CLOUD_FUNCTION_URL, {
+            // Get the user's auth token for making a secure, authenticated API call
+            const token = await user.getIdToken();
+
+            // Call the Netlify Function endpoint
+            const response = await fetch('/.netlify/functions/createPaymentSession', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    amount: paymentAmount,
-                    userId: user.uid,
-                    userEmail: user.email,
-                }),
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}` // Send token for authentication
+                },
+                body: JSON.stringify({ amount: paymentAmount }),
             });
 
             if (!response.ok) {
                 const errorData = await response.json();
-                throw new Error(errorData.message || 'Failed to create payment session. Please contact support.');
+                throw new Error(errorData.error || 'Failed to create payment session.');
             }
 
-            const session = await response.json();
+            const { paymentUrl } = await response.json();
 
-            if (session.paymentUrl) {
-                window.location.href = session.paymentUrl;
+            if (paymentUrl) {
+                // Redirect the user to the Workup Pay checkout page
+                window.location.href = paymentUrl;
             } else {
                 throw new Error('Could not retrieve payment URL.');
             }
 
         } catch (err) {
             console.error("Payment initiation failed:", err);
-            setError(err.message);
-            showAlert("Payment Error", err.message);
+            const errorMessage = err.message || "Failed to create payment session. Please contact support.";
+            setError(errorMessage);
+            showAlert("Payment Error", errorMessage);
             setLoading(false);
         }
     };
@@ -890,7 +888,7 @@ function AutomatedPaymentGateway({ user, showAlert }) {
             </p>
             
             <div className="my-4 flex justify-center items-center p-4 bg-background-alt rounded-lg">
-                <img src="https://placehold.co/150x50/ffffff/000000?text=Workuo+Pay" alt="Workuo Pay Logo" className="h-10" />
+                <img src="https://workuppay.co/assets/images/logoIcon/logo.png" alt="Workup Pay Logo" className="h-10" />
             </div>
 
             <form onSubmit={handlePaymentSubmit} className="mt-6 space-y-4">
@@ -991,7 +989,7 @@ function AddFundsPage({ user, userData, showAlert }) {
                 if (userData.referredBy) {
                     const referrerRef = doc(db, "users", userData.referredBy);
                     const commissionAmount = parseFloat(requestData.amount) * COMMISSION_RATE;
-    
+        
                     const referrerSnap = await transaction.get(referrerRef);
                     if (referrerSnap.exists()) {
                         const referrerData = referrerSnap.data();
