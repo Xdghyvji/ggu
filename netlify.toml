@@ -5,3 +5,10 @@
 
 [functions]
   node_bundler = "esbuild"
+
+# This new rule tells Netlify how to handle API calls.
+# It proxies any request from /api/* to your backend functions.
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
