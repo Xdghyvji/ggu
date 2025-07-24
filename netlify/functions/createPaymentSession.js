@@ -2,10 +2,9 @@ const axios = require("axios");
 const admin = require("firebase-admin");
 
 // Securely load the Firebase service account key from environment variables
-// This key is Base64 encoded in Netlify's settings for security.
 const serviceAccount = JSON.parse(Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_KEY, 'base64').toString('utf-8'));
 
-// Initialize Firebase Admin SDK only once to prevent re-initialization on every function call
+// Initialize Firebase Admin SDK only once
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
@@ -14,70 +13,64 @@ if (!admin.apps.length) {
 
 const db = admin.firestore();
 
-// The main handler for the Netlify serverless function
 exports.handler = async (event) => {
-  // We only want to handle POST requests for creating payments
   if (event.httpMethod !== "POST") {
     return { statusCode: 405, body: "Method Not Allowed" };
   }
 
   try {
-    // Parse the data sent from the React frontend
     const { amount, userId, userEmail } = JSON.parse(event.body);
 
-    // Basic validation to ensure we have the necessary data
     if (!amount || !userId || !userEmail || amount < 10) {
       return { statusCode: 400, body: JSON.stringify({ message: "Invalid request data." }) };
     }
 
-    // Securely get the secret API key from Netlify's environment variables
-    const secretKey = process.env.WORKUO_PAY_SECRET_KEY;
-    if (!secretKey) {
-        console.error("Workuo Pay secret key is not set in environment variables.");
+    // Get the PUBLIC key from Netlify's environment variables
+    const publicKey = process.env.WORKUO_PAY_PUBLIC_KEY;
+    if (!publicKey) {
+        console.error("Workuo Pay PUBLIC key is not set in environment variables.");
         return { statusCode: 500, body: JSON.stringify({ message: "Payment processor not configured." }) };
     }
 
-    // Create a new, unique document in Firestore for this transaction
     const internalTransactionRef = db.collection("users").doc(userId).collection("transactions").doc();
     const transactionId = internalTransactionRef.id;
 
-    // Prepare the data payload to send to the Workuo Pay API
+    // Prepare the payload EXACTLY as per Workup Pay documentation
     const workuoPayPayload = {
-      api_key: secretKey,
-      amount: amount,
-      currency: "PKR",
-      order_id: transactionId, // We send our unique ID to them so we can track it
-      customer_email: userEmail,
-      // The URL the user is sent back to after payment
-      redirect_url: `https://arhamshop.site/transactions`,
-      // The URL Workuo Pay will send a confirmation to (the webhook)
-      webhook_url: `https://arhamshop.site/.netlify/functions/paymentWebhook`,
+        public_key: publicKey,
+        identifier: transactionId, // Use our unique Firestore ID as the identifier
+        currency: "PKR",
+        amount: amount,
+        details: `SMM Panel fund request for ${userEmail}`,
+        ipn_url: `https://arhamshop.site/.netlify/functions/paymentWebhook`,
+        success_url: `https://arhamshop.site/transactions`,
+        cancel_url: `https://arhamshop.site/addFunds`,
+        site_logo: 'https://arhamshop.site/logo.png', // Make sure you have a logo at this URL
+        checkout_theme: 'light',
+        customer_name: userData.name || userEmail.split('@')[0],
+        customer_email: userEmail,
     };
 
-    // Make the API call to Workuo Pay to create a payment link
-    const response = await axios.post("https://workuppay.co/api/v1/create_payment", workuoPayPayload);
+    // Use the correct LIVE endpoint from the documentation
+    const response = await axios.post("https://workuppay.co/payment/initiate", workuoPayPayload);
 
-    // Check if the API call was successful and returned a payment URL
-    if (response.data && response.data.payment_url) {
-      // Create a "pending" transaction record in our database before redirecting the user
+    if (response.data && response.data.url) {
       await internalTransactionRef.set({
         amount: amount,
         status: "pending",
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         gateway: "Workuo Pay",
-        gatewayTransactionId: response.data.transaction_id || null, // Store their ID if provided
+        gatewayTransactionId: null, // We will get this in the webhook
       });
 
-      // Send the payment URL back to the React app
       return {
         statusCode: 200,
-        body: JSON.stringify({ paymentUrl: response.data.payment_url }),
+        body: JSON.stringify({ paymentUrl: response.data.url }),
       };
     } else {
-      throw new Error("Invalid response from payment gateway.");
+      throw new Error(response.data.message || "Invalid response from payment gateway.");
     }
   } catch (error) {
-    // Log any errors for debugging
     console.error("Error creating payment session:", error.response ? error.response.data : error.message);
     return {
       statusCode: 500,
