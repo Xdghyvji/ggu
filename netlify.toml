@@ -1,12 +1,20 @@
 [build]
-  # FIX: Switched to yarn to resolve npm dependency issue
+  # This command uses yarn for a more reliable build
   command = "yarn install && yarn build"
+  # The output directory for Vite builds is 'dist'
   publish = "dist"
 
 [functions]
   directory = "netlify/functions"
 
+# This rule proxies function calls and should come first
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
+  status = 200
+
+# FIX: This rule handles SPA routing and must be the last rule in the file
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
   status = 200
