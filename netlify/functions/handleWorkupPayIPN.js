@@ -60,6 +60,10 @@ exports.handler = async (event, context) => {
       const userDoc = await t.get(userRef);
       const transactionDoc = await t.get(transactionRef);
       
+      if (!userDoc.exists() || !transactionDoc.exists()) {
+        throw new Error("User or Transaction document not found.");
+      }
+      
       if (transactionDoc.data().status === 'completed') {
           console.log(`IPN for ${identifier} already processed.`);
           return;
@@ -75,10 +79,29 @@ exports.handler = async (event, context) => {
             updatedAt: admin.firestore.FieldValue.serverTimestamp()
         });
         
-        // Handle referral commission if needed
+        // --- ADDED: Handle referral commission logic ---
         const userData = userDoc.data();
         if (userData.referredBy) {
-          // ... (same commission logic as before)
+            const referrerRef = db.collection("users").doc(userData.referredBy);
+            const commissionRate = 0.05; // 5%
+            const commissionAmount = amountToAdd * commissionRate;
+
+            const referrerDoc = await t.get(referrerRef);
+            if (referrerDoc.exists()) {
+                 const currentCommission = referrerDoc.data().commissionBalance || 0;
+                 t.update(referrerRef, { commissionBalance: currentCommission + commissionAmount });
+
+                 const commissionLogRef = db.collection("users").doc(userData.referredBy).collection("commissions").doc();
+                 t.set(commissionLogRef, {
+                    amount: commissionAmount,
+                    fromUserId: userId,
+                    fromUserEmail: userData.email,
+                    transactionId: identifier,
+                    createdAt: admin.firestore.FieldValue.serverTimestamp()
+                 });
+
+                 console.log(`Awarded ${commissionAmount} commission to referrer ${userData.referredBy}`);
+            }
         }
       } else {
         t.update(transactionRef, { status: 'failed' });
