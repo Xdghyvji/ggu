@@ -208,247 +208,26 @@ const ParticleContainer = ({ effect }) => {
     return <div className="fixed inset-0 -z-10 opacity-50">{particles}</div>;
 };
 
-
-// --- Main App Component ---
-export default function App() {
-    const [user, setUser] = useState(null);
-    const [userData, setUserData] = useState(null);
-    const [orders, setOrders] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [alertModal, setAlertModal] = useState({ isOpen: false, title: '', message: '' });
-
-    const [page, setPage] = useState('dashboard');
-    const [view, setView] = useState('landing');
-    const [selectedService, setSelectedService] = useState(null);
-    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-    const [theme, setTheme] = useState('default');
-    const [pageTemplates, setPageTemplates] = useState({ landing: 'default', login: 'default' });
-
-    const showAlert = (title, message) => {
-        setAlertModal({ isOpen: true, title, message });
+// --- Helper Components ---
+const StatusBadge = ({ status }) => {
+    const statusMap = {
+        Completed: 'bg-green-100 text-green-800', completed: 'bg-green-100 text-green-800',
+        Processing: 'bg-blue-100 text-blue-800',
+        Pending: 'bg-yellow-100 text-yellow-800', pending: 'bg-yellow-100 text-yellow-800',
+        Canceled: 'bg-red-100 text-red-800', failed: 'bg-red-100 text-red-800',
+        Partial: 'bg-purple-100 text-purple-800',
+        Open: 'bg-sky-100 text-sky-800',
+        Answered: 'bg-indigo-100 text-indigo-800',
+        Resolved: 'bg-gray-100 text-gray-800', 'resolved': 'bg-gray-200 text-gray-800',
+        rejected: 'bg-red-100 text-red-800'
     };
+    return (<span className={`px-2.5 py-1 text-xs font-semibold rounded-full capitalize ${statusMap[status] || 'bg-gray-100 text-gray-800'}`}>{status}</span>);
+};
 
-    // --- Theme Listener ---
-    useEffect(() => {
-        document.documentElement.className = `theme-${theme}`;
-    }, [theme]);
+const StatCard = ({ icon: Icon, title, value, color }) => (<div className="bg-card p-6 rounded-lg shadow-md flex items-center animate-fade-in-up"><div className={`mr-4 p-3 rounded-full ${color}`}><Icon className="h-6 w-6 text-white" /></div><div><p className="text-sm text-text-secondary">{title}</p><p className="text-2xl font-bold text-text-primary">{value}</p></div></div>);
 
-    useEffect(() => {
-        const settingsRef = doc(db, "settings", "theme");
-        const unsubscribeSettings = onSnapshot(settingsRef, (docSnap) => {
-            if (docSnap.exists()) {
-                const data = docSnap.data();
-                setTheme(data.name || 'default');
-                setPageTemplates({
-                    landing: data.landingTemplate || 'default',
-                    login: data.loginTemplate || 'default'
-                });
-            }
-        });
+// --- All Page Components ---
 
-        const unsubscribeAuth = onAuthStateChanged(auth, async (userAuth) => {
-            if (userAuth) {
-                if (userAuth.email === "admin@paksmm.com") {
-                    signOut(auth);
-                    setView('landing');
-                    setLoading(false);
-                    return;
-                }
-                const userRef = doc(db, "users", userAuth.uid);
-                const unsubscribeUser = onSnapshot(userRef, (docSnap) => {
-                    if (docSnap.exists()) {
-                        const data = docSnap.data();
-                        setUserData({ id: docSnap.id, ...data });
-                    } else {
-                        const urlParams = new URLSearchParams(window.location.search);
-                        const refId = urlParams.get('ref');
-
-                        const newUserDoc = {
-                            email: userAuth.email,
-                            name: userAuth.displayName || 'New User',
-                            balance: 0.00,
-                            status: 'active',
-                            createdAt: Timestamp.now(),
-                            apiKey: crypto.randomUUID(),
-                            timezone: 'Asia/Karachi',
-                            photoURL: userAuth.photoURL || null,
-                            commissionBalance: 0,
-                            withdrawalMethod: null,
-                            claimedRankRewards: [],
-                            totalSpent: 0,
-                            referredBy: refId || null
-                        };
-                        setDoc(userRef, newUserDoc);
-                        setUserData({ id: userAuth.uid, ...newUserDoc });
-                    }
-                    setUser(userAuth);
-                    setView('app');
-                    setLoading(false);
-                });
-                return () => unsubscribeUser();
-            } else {
-                setUser(null);
-                setUserData(null);
-                setOrders([]);
-                setView('landing');
-                setLoading(false);
-            }
-        });
-        
-        return () => {
-            unsubscribeSettings();
-            unsubscribeAuth();
-        };
-    }, []);
-
-    // --- Firestore Orders Listener ---
-    useEffect(() => {
-        if (user) {
-            const q = query(collection(db, "users", user.uid, "orders"), orderBy("createdAt", "desc"));
-            const unsubscribe = onSnapshot(q, (querySnapshot) => {
-                const ordersData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                setOrders(ordersData);
-
-                const newTotalSpent = ordersData
-                    .filter(o => o.status === 'Completed')
-                    .reduce((sum, o) => sum + (o.charge || 0), 0);
-                
-                if (userData && userData.totalSpent !== newTotalSpent) {
-                    const userRef = doc(db, "users", user.uid);
-                    updateDoc(userRef, { totalSpent: newTotalSpent });
-                }
-
-            }, (error) => {
-                console.error("Error fetching orders:", error);
-            });
-            return () => unsubscribe();
-        }
-    }, [user, userData]);
-
-    // --- Helper Functions ---
-    const formatCurrency = (amount) => {
-        if (amount === undefined || amount === null) return `${CURRENCY_SYMBOL}0.00`;
-        return `${CURRENCY_SYMBOL}${(amount).toFixed(2)}`;
-    };
-
-    const navigateTo = (pageName) => {
-        setPage(pageName);
-        if (pageName !== 'newOrder') setSelectedService(null);
-        setIsMobileMenuOpen(false);
-    };
-
-    const placeNewOrder = async (order) => {
-        if (!user || !userData) return;
-
-        if (userData.balance < order.charge) {
-            showAlert("Order Error", "Insufficient balance to place this order.");
-            return Promise.reject("Insufficient balance");
-        }
-
-        try {
-            const newBalance = userData.balance - order.charge;
-            await updateDoc(doc(db, "users", user.uid), { balance: newBalance });
-
-            const newOrderRef = await addDoc(collection(db, "users", user.uid, "orders"), {
-                ...order,
-                orderId: `ORD-${Date.now()}`,
-                status: 'Pending',
-                date: new Date().toISOString().split('T')[0],
-                createdAt: Timestamp.now()
-            });
-
-            await logAdminAction("ORDER_PLACED", { orderId: newOrderRef.id, userId: user.uid, serviceId: order.serviceId, charge: order.charge });
-            navigateTo('orders');
-            return Promise.resolve("Order placed successfully!");
-
-        } catch (error) {
-            console.error("Frontend Order Error:", error);
-            showAlert("Order Error", error.message);
-            return Promise.reject(error.message);
-        }
-    };
-
-    const handleSelectService = (service) => {
-        setSelectedService(service);
-        setPage('newOrder');
-    };
-
-    const handleLogout = async () => { await signOut(auth); };
-
-    if (loading) {
-        return <div className="min-h-screen flex items-center justify-center bg-slate-900"><p className="text-white">Loading...</p></div>;
-    }
-
-    const renderContent = () => {
-        if (!user || !userData) {
-            switch (view) {
-                case 'auth':
-                    return <LoginPage setView={setView} showAlert={showAlert} template={pageTemplates.login}/>;
-                default:
-                    return <LandingPage setView={setView} template={pageTemplates.landing}/>;
-            }
-        }
-
-        if (userData.status === 'blocked') {
-            return (
-                <div className="min-h-screen flex flex-col items-center justify-center bg-red-50 text-red-800 p-4">
-                    <h1 className="text-2xl font-bold mb-4">Account Blocked</h1>
-                    <p>Your account has been blocked by the administrator.</p>
-                    <p>Please contact support for more information.</p>
-                    <button onClick={handleLogout} className="mt-6 bg-red-600 text-white px-4 py-2 rounded">Logout</button>
-                </div>
-            )
-        }
-
-        const PageContent = () => {
-            const props = { formatCurrency, user, userData, navigateTo, placeNewOrder, showAlert };
-            switch (page) {
-                case 'dashboard': return <Dashboard {...props} stats={{ balance: userData.balance, totalSpent: userData.totalSpent }} />;
-                case 'services': return <ServicesList {...props} onOrderSelect={handleSelectService} />;
-                case 'orders': return <OrdersHistory {...props} orders={orders} />;
-                case 'newOrder': return <NewOrderPage {...props} service={selectedService} userBalance={userData.balance} onSubmit={placeNewOrder} onBack={() => navigateTo('services')} />;
-                case 'addFunds': return <AddFundsPage {...props} />;
-                case 'transactions': return <TransactionsPage {...props} />;
-                case 'support': return <SupportPage {...props} />;
-                case 'contact': return <ContactUsPage />;
-                case 'settings': return <AccountSettingsPage {...props} />;
-                case 'ranks': return <RanksPage {...props} totalSpent={userData.totalSpent} />;
-                case 'invite': return <InviteAndEarnPage {...props} />;
-                default: return <Dashboard {...props} stats={{ balance: userData.balance, totalSpent: userData.totalSpent }} />;
-            }
-        };
-        
-        return (
-             <div className="flex min-h-screen bg-background text-text-primary">
-                 <Sidebar navigateTo={navigateTo} currentPage={page} isMobileMenuOpen={isMobileMenuOpen} setIsMobileMenuOpen={setIsMobileMenuOpen} onLogout={handleLogout} />
-                 <div className="flex-1 flex flex-col lg:ml-64">
-                     <Header user={userData} onMenuClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} formatCurrency={formatCurrency} navigateTo={navigateTo} />
-                     <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto"><PageContent /></main>
-                     <FloatingWhatsAppButton />
-                 </div>
-             </div>
-        );
-    };
-
-    return (
-        <>
-            <ThemeStyles />
-            <div className={`theme-${theme}`}>
-                <ParticleContainer effect={theme} />
-                {alertModal.isOpen && (
-                    <AlertModal
-                        title={alertModal.title}
-                        message={alertModal.message}
-                        onClose={() => setAlertModal({ isOpen: false, title: '', message: '' })}
-                    />
-                )}
-                {renderContent()}
-            </div>
-        </>
-    );
-}
-
-// --- Landing Page ---
 function LandingPage({ setView, template }) {
     const HeroSection = () => (
         <main className="flex flex-col items-center justify-center text-center px-4" style={{ minHeight: '80vh' }}>
