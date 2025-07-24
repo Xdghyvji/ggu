@@ -48,9 +48,9 @@ exports.handler = async (event) => {
       currency: "PKR",
       order_id: transactionId, // We send our unique ID to them so we can track it
       customer_email: userEmail,
-      // **UPDATED**: The URL the user is sent back to after payment
+      // The URL the user is sent back to after payment
       redirect_url: `https://arhamshop.site/transactions`,
-      // **UPDATED**: The URL Workuo Pay will send a confirmation to (the webhook)
+      // The URL Workuo Pay will send a confirmation to (the webhook)
       webhook_url: `https://arhamshop.site/.netlify/functions/paymentWebhook`,
     };
 
