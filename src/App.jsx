@@ -40,7 +40,6 @@ import {
 } from 'firebase/firestore';
 
 // --- Firebase Configuration ---
-// IMPORTANT: It's best practice to store these in environment variables
 const firebaseConfig = {
     apiKey: "AIzaSyBgjU9fzFsfx6-gv4p0WWH77_U5BPk69A0",
     authDomain: "smmp-4b3cc.firebaseapp.com",
@@ -835,8 +834,9 @@ function AutomatedPaymentGateway({ user, showAlert }) {
         e.preventDefault();
         const paymentAmount = parseFloat(amount);
 
-        if (isNaN(paymentAmount) || paymentAmount < 10) {
-            setError('Minimum deposit amount is Rs10.');
+        // --- FIX: Updated minimum payment amount to 1 ---
+        if (isNaN(paymentAmount) || paymentAmount < 1) {
+            setError('Minimum deposit is Rs1.');
             return;
         }
 
@@ -888,6 +888,7 @@ function AutomatedPaymentGateway({ user, showAlert }) {
             </p>
             
             <div className="my-4 flex justify-center items-center p-4 bg-background-alt rounded-lg">
+                {/* --- FIX: Using official Workup Pay logo --- */}
                 <img src="https://workuppay.co/assets/images/logoIcon/logo.png" alt="Workup Pay Logo" className="h-10" />
             </div>
 
@@ -906,7 +907,7 @@ function AutomatedPaymentGateway({ user, showAlert }) {
                             className="w-full p-3 pl-4 border border-border-color rounded-lg bg-input focus:ring-2 focus:ring-primary transition"
                             placeholder="e.g., 1000"
                             required
-                            min="10"
+                            min="1" // --- FIX: Updated min attribute ---
                         />
                     </div>
                     {error && <p className="text-red-500 text-xs mt-1">{error}</p>}
@@ -931,7 +932,7 @@ function AutomatedPaymentGateway({ user, showAlert }) {
 }
 
 
-// --- UPDATED Add Funds Page ---
+// --- Add Funds Page ---
 function AddFundsPage({ user, userData, showAlert }) {
     const [modalOpen, setModalOpen] = useState(false);
     const [paymentMethod, setPaymentMethod] = useState(null);
@@ -961,10 +962,12 @@ function AddFundsPage({ user, userData, showAlert }) {
         setModalOpen(true);
     };
 
+    // --- FIX: Simplified manual fund request logic ---
     const handleRequestSubmit = async (requestData) => {
         if (!user) return;
         
         try {
+            // Use a transaction to ensure atomicity
             await runTransaction(db, async (transaction) => {
                 const trxIdRef = doc(db, "used_transaction_ids", requestData.trxId);
                 const trxIdDoc = await transaction.get(trxIdRef);
@@ -973,40 +976,20 @@ function AddFundsPage({ user, userData, showAlert }) {
                     throw new Error("This Transaction ID has already been used. Please check the ID and try again.");
                 }
 
+                // Create the fund request in the user's subcollection
                 const fundRequestRef = doc(collection(db, "users", user.uid, "fund_requests"));
                 transaction.set(fundRequestRef, {
                     ...requestData,
-                    userEmail: user.email,
+                    userEmail: user.email, // Add user email for admin reference
                     status: 'pending',
                     date: new Date().toISOString()
                 });
                 
+                // Mark the transaction ID as used
                 transaction.set(trxIdRef, { 
                     userId: user.uid, 
                     usedAt: serverTimestamp() 
                 });
-
-                if (userData.referredBy) {
-                    const referrerRef = doc(db, "users", userData.referredBy);
-                    const commissionAmount = parseFloat(requestData.amount) * COMMISSION_RATE;
-        
-                    const referrerSnap = await transaction.get(referrerRef);
-                    if (referrerSnap.exists()) {
-                        const referrerData = referrerSnap.data();
-                        const newCommissionBalance = (referrerData.commissionBalance || 0) + commissionAmount;
-                        
-                        transaction.update(referrerRef, { commissionBalance: newCommissionBalance });
-                        
-                        const commissionLogRef = doc(collection(referrerRef, "commissions"));
-                        transaction.set(commissionLogRef, {
-                            amount: commissionAmount,
-                            fromUser: user.uid,
-                            fromEmail: user.email,
-                            fundRequestId: fundRequestRef.id,
-                            date: serverTimestamp()
-                        });
-                    }
-                }
             });
 
             setModalOpen(false);
@@ -2045,7 +2028,7 @@ function RanksPage({ totalSpent, formatCurrency, user, userData, showAlert }) {
     );
 }
 
-// --- Invite & Earn Page ---
+// --- Invite & Earn Page (REWRITTEN) ---
 function InviteAndEarnPage({ user, userData, formatCurrency, showAlert }) {
     const [withdrawalMethod, setWithdrawalMethod] = useState(userData?.withdrawalMethod || { name: 'Easypaisa', details: '', accountName: '' });
     const [withdrawalAmount, setWithdrawalAmount] = useState('');
@@ -2056,39 +2039,40 @@ function InviteAndEarnPage({ user, userData, formatCurrency, showAlert }) {
 
     const referralLink = `${window.location.origin}${window.location.pathname}?ref=${user.uid}`;
 
+    // --- FIX: Use a real-time listener for referrals and their commissions ---
     useEffect(() => {
         if (!user) return;
+        setLoadingReferrals(true);
 
-        const fetchReferrals = async () => {
-            setLoadingReferrals(true);
-            const referralsQuery = query(collection(db, "users"), where("referredBy", "==", user.uid));
-            const referredUsersSnapshot = await getDocs(referralsQuery);
+        // Listen for users who were referred by the current user
+        const referralsQuery = query(collection(db, "users"), where("referredBy", "==", user.uid));
+        const unsubscribeReferrals = onSnapshot(referralsQuery, async (snapshot) => {
+            const referredUsersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-            const referralsData = await Promise.all(referredUsersSnapshot.docs.map(async (userDoc) => {
-                const referredUser = { id: userDoc.id, ...userDoc.data() };
-                let totalDeposited = 0;
+            // For each referred user, get their total commission paid to the referrer
+            const commissionsQuery = query(collection(db, `users/${user.uid}/commissions`));
+            const commissionsSnapshot = await getDocs(commissionsQuery);
+            
+            const commissionsByReferredUser = commissionsSnapshot.docs.reduce((acc, doc) => {
+                const data = doc.data();
+                acc[data.fromUserId] = (acc[data.fromUserId] || 0) + data.amount;
+                return acc;
+            }, {});
 
-                const fundsQuery = query(collection(db, "users", referredUser.id, "fund_requests"), where("status", "==", "completed"));
-                const fundsSnapshot = await getDocs(fundsQuery);
-
-                fundsSnapshot.forEach(fundDoc => {
-                    totalDeposited += parseFloat(fundDoc.data().amount) || 0;
-                });
-
-                return {
-                    email: referredUser.email,
-                    totalDeposited: totalDeposited,
-                    commissionEarned: totalDeposited * COMMISSION_RATE
-                };
+            const referralsWithCommission = referredUsersData.map(refUser => ({
+                email: refUser.email,
+                totalSpent: refUser.totalSpent || 0,
+                commissionEarned: commissionsByReferredUser[refUser.id] || 0
             }));
 
-            setReferrals(referralsData);
+            setReferrals(referralsWithCommission);
             setLoadingReferrals(false);
+        });
+
+        return () => {
+            unsubscribeReferrals();
         };
-
-        fetchReferrals();
     }, [user]);
-
 
     const handleCopyLink = () => {
         navigator.clipboard.writeText(referralLink).then(() => {
@@ -2258,7 +2242,7 @@ function InviteAndEarnPage({ user, userData, formatCurrency, showAlert }) {
                             <thead className="bg-background-alt text-text-secondary uppercase text-xs">
                                 <tr>
                                     <th className="p-3">User Email</th>
-                                    <th className="p-3">Total Deposited</th>
+                                    <th className="p-3">Total Spent</th>
                                     <th className="p-3">Commission Earned</th>
                                 </tr>
                             </thead>
@@ -2269,7 +2253,7 @@ function InviteAndEarnPage({ user, userData, formatCurrency, showAlert }) {
                                     referrals.map((ref, index) => (
                                         <tr key={index}>
                                             <td className="p-3 text-text-secondary">{ref.email}</td>
-                                            <td className="p-3 text-text-secondary">{formatCurrency(ref.totalDeposited)}</td>
+                                            <td className="p-3 text-text-secondary">{formatCurrency(ref.totalSpent)}</td>
                                             <td className="p-3 font-semibold text-green-600">{formatCurrency(ref.commissionEarned)}</td>
                                         </tr>
                                     ))

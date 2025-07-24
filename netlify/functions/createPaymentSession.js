@@ -43,6 +43,11 @@ exports.handler = async (event, context) => {
     const transactionRef = db.collection('users').doc(userId).collection('transactions').doc();
     const identifier = transactionRef.id;
 
+    // --- FIX: Create a lookup document for the IPN handler ---
+    // This allows the IPN function to find the user without searching the entire database.
+    const ipnLookupRef = db.collection('ipn_lookups').doc(identifier);
+    await ipnLookupRef.set({ userId: userId });
+
     const parameters = {
       public_key: process.env.WORKUP_PAY_PUBLIC_KEY,
       identifier: identifier,

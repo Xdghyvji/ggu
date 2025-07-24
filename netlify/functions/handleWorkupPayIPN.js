@@ -26,6 +26,13 @@ exports.handler = async (event, context) => {
   const signature = params.get('signature');
   const identifier = params.get('identifier');
   const rawData = params.get('data');
+  
+  // Early exit if essential data is missing
+  if (!status || !signature || !identifier || !rawData) {
+    console.error('IPN Error: Missing required parameters.');
+    return { statusCode: 400, body: 'Missing parameters.' };
+  }
+  
   const data = JSON.parse(rawData);
 
   // --- Signature Validation ---
@@ -41,22 +48,16 @@ exports.handler = async (event, context) => {
     return { statusCode: 400, body: 'Invalid signature.' };
   }
   
-  // --- Find user and transaction ---
-  const usersSnapshot = await db.collection('users').get();
-  let userId = null;
-  for (const userDoc of usersSnapshot.docs) {
-    const transactionDoc = await db.collection('users').doc(userDoc.id).collection('transactions').doc(identifier).get();
-    if (transactionDoc.exists) {
-      userId = userDoc.id;
-      break;
-    }
+  // --- FIX: Find user and transaction directly via lookup document ---
+  const ipnLookupRef = db.collection('ipn_lookups').doc(identifier);
+  const ipnLookupDoc = await ipnLookupRef.get();
+
+  if (!ipnLookupDoc.exists) {
+     console.error(`IPN Error: Could not find lookup for identifier: ${identifier}`);
+     return { statusCode: 404, body: 'Transaction lookup not found.' };
   }
 
-  if (!userId) {
-     console.error(`IPN Error: Could not find transaction for identifier: ${identifier}`);
-     return { statusCode: 404, body: 'Transaction not found.' };
-  }
-
+  const { userId } = ipnLookupDoc.data();
   const userRef = db.collection("users").doc(userId);
   const transactionRef = userRef.collection("transactions").doc(identifier);
     
@@ -107,16 +108,4 @@ exports.handler = async (event, context) => {
 
                  console.log(`Awarded ${commissionAmount} commission to referrer ${userData.referredBy}`);
             }
-        }
-      } else {
-        t.update(transactionRef, { status: 'failed' });
-      }
-    });
-    
-    return { statusCode: 200, body: 'IPN Processed' };
-
-  } catch (error) {
-    console.error('IPN Transaction failed:', error);
-    return { statusCode: 500, body: 'Internal Server Error' };
-  }
-};
+        };
