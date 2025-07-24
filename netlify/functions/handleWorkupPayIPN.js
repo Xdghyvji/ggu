@@ -1,15 +1,17 @@
-// netlify/functions/handleWorkupPayIPN.js
+// FILE: netlify/functions/handleWorkupPayIPN.js
 
 const admin = require('firebase-admin');
 const crypto = require('crypto');
 
-// Initialize Firebase Admin SDK
-const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-
+// --- UPDATED FIREBASE INITIALIZATION ---
+// This now uses individual environment variables to avoid the 4KB limit.
 if (!admin.apps.length) {
   admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    projectId: process.env.FIREBASE_PROJECT_ID,
+    credential: admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+    }),
   });
 }
 const db = admin.firestore();
@@ -35,7 +37,6 @@ exports.handler = async (event, context) => {
   }
   
   // --- Find user and transaction ---
-  // (This part is complex as we need to search for the transaction. The logic from the Firebase function is adapted here)
   const usersSnapshot = await db.collection('users').get();
   let userId = null;
   for (const userDoc of usersSnapshot.docs) {
