@@ -1,13 +1,11 @@
 [build]
-  command = "npm run build"
-  publish = "dist"
-  functions = "netlify/functions"
+  # FIX: Clears the cache, reinstalls dependencies, then builds.
+  command = "npm cache clean --force && npm install && npm run build"
+  publish = "dist" # Vite's default output directory is 'dist'
 
 [functions]
-  node_bundler = "esbuild"
+  directory = "netlify/functions"
 
-# This new rule tells Netlify how to handle API calls.
-# It proxies any request from /api/* to your backend functions.
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
