@@ -1,7 +1,7 @@
 [build]
-  # FIX: Clears the cache, reinstalls dependencies, then builds.
-  command = "npm cache clean --force && npm install && npm run build"
-  publish = "dist" # Vite's default output directory is 'dist'
+  # FIX: Switched to yarn to resolve npm dependency issue
+  command = "yarn install && yarn build"
+  publish = "dist"
 
 [functions]
   directory = "netlify/functions"
