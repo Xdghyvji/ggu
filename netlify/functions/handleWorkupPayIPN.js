@@ -94,10 +94,20 @@ exports.handler = async (event, context) => {
     await db.runTransaction(async (t) => {
       const userDoc = await t.get(userRef);
       console.log('Inside transaction: userDoc retrieved:', userDoc); // ADDED LOG
+      console.log('Type of userDoc:', typeof userDoc); // Should be 'object'
+      console.log('userDoc.exists (property):', userDoc.exists); // Should be boolean
+      console.log('Type of userDoc.exists (property):', typeof userDoc.exists); // Should be 'boolean'
+      console.log('userDoc.exists (method):', typeof userDoc.exists === 'function' ? 'function' : 'not a function'); // Should be 'function' on DocumentSnapshot, but property is safer.
+
       const transactionDoc = await t.get(transactionRef);
       console.log('Inside transaction: transactionDoc retrieved:', transactionDoc); // ADDED LOG
+      console.log('Type of transactionDoc:', typeof transactionDoc);
+      console.log('transactionDoc.exists (property):', transactionDoc.exists);
+      console.log('Type of transactionDoc.exists (property):', typeof transactionDoc.exists);
+      console.log('transactionDoc.exists (method):', typeof transactionDoc.exists === 'function' ? 'function' : 'not a function');
 
-      if (!userDoc.exists() || !transactionDoc.exists()) {
+      // --- FIX: Changed from .exists() to .exists (property access) ---
+      if (!userDoc.exists || !transactionDoc.exists) {
         throw new Error("User or Transaction document not found.");
       }
       
@@ -124,7 +134,7 @@ exports.handler = async (event, context) => {
             const commissionAmount = amountToAdd * commissionRate;
 
             const referrerDoc = await t.get(referrerRef);
-            if (referrerDoc.exists()) {
+            if (referrerDoc.exists) { // Changed from .exists() to .exists
                  const currentCommission = referrerDoc.data().commissionBalance || 0;
                  t.update(referrerRef, { commissionBalance: currentCommission + commissionAmount });
 
