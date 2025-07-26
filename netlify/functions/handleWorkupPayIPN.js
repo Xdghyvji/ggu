@@ -32,11 +32,13 @@ exports.handler = async (event, context) => {
   const signature = params.get('signature');
   const identifier = params.get('identifier');
 
-    // --- CORRECTED DATA PARSING ---
-    // Extract individual data fields directly from URLSearchParams
+    // --- Store original string amount for signature validation ---
+    const rawAmountString = params.get('data[amount]');
+
+    // --- CORRECTED DATA PARSING (for internal use after validation) ---
     const data = {
         payment_trx: params.get('data[payment_trx]'),
-        amount: params.get('data[amount]'),
+        amount: parseFloat(rawAmountString), // Convert to float for later use
         payment_type: params.get('data[payment_type]'),
         charge: params.get('data[charge]'),
         currency: {
@@ -45,31 +47,36 @@ exports.handler = async (event, context) => {
         },
         // Add any other 'data[key]' parameters you expect from Workup Pay
     };
-    // Ensure 'data.amount' is a float for consistency, as Workup Pay sends it as string
-    data.amount = parseFloat(data.amount);
 
-    console.log('Parsed data object:', data); // Log the parsed data
+    console.log('Parsed data object (for internal use):', data); // Log the parsed data
 
   // Early exit if essential top-level parameters or critical data fields are missing
-  if (!status || !signature || !identifier || isNaN(data.amount) || data.amount === null || data.payment_trx === null) {
+  if (!status || !signature || !identifier || isNaN(data.amount) || rawAmountString === null || data.payment_trx === null) {
     console.error('IPN Error: Missing required parameters or invalid data amount.');
     return { statusCode: 400, body: 'Missing parameters.' };
   }
   
   // --- Signature Validation ---
-  // Use the amount directly from the parsed data object
-  const customKey = `${data.amount}${identifier}`;
+  // Use the original string amount for signature generation to match Workup Pay's hash
+  const customKey = `${rawAmountString}${identifier}`; // Use rawAmountString here
   const mySignature = crypto
     .createHmac('sha256', process.env.WORKUP_PAY_SECRET_KEY)
     .update(customKey)
     .digest('hex')
     .toUpperCase();
 
+    // --- ADDED DEBUGGING LOGS FOR SIGNATURE ---
+    console.log('Signature received from Workup Pay:', signature);
+    console.log('Calculated customKey for hash:', customKey);
+    console.log('Calculated mySignature:', mySignature);
+
+
   if (signature !== mySignature) {
     console.error('IPN Validation Failed: Signatures do not match.');
     return { statusCode: 400, body: 'Invalid signature.' };
   }
-  
+    console.log('Signature validated successfully.'); // Log on success
+
   // --- Find user and transaction directly via lookup document ---
   const ipnLookupRef = db.collection('ipn_lookups').doc(identifier);
   const ipnLookupDoc = await ipnLookupRef.get();
