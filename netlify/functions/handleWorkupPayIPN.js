@@ -93,8 +93,10 @@ exports.handler = async (event, context) => {
   try {
     await db.runTransaction(async (t) => {
       const userDoc = await t.get(userRef);
+      console.log('Inside transaction: userDoc retrieved:', userDoc); // ADDED LOG
       const transactionDoc = await t.get(transactionRef);
-      
+      console.log('Inside transaction: transactionDoc retrieved:', transactionDoc); // ADDED LOG
+
       if (!userDoc.exists() || !transactionDoc.exists()) {
         throw new Error("User or Transaction document not found.");
       }
