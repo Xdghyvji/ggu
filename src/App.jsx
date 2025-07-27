@@ -50,15 +50,11 @@ const firebaseConfig = {
     measurementId: "G-Y6HBHEL742"
 };
 
-// --- Cloudinary Configuration ---
-const CLOUDINARY_CLOUD_NAME = "dis1ptaip";
-const CLOUDINARY_UPLOAD_PRESET = "mubashir";
-
-
 // --- Currency & Rate Constants ---
 const CURRENCY_SYMBOL = 'Rs';
 const MIN_WITHDRAWAL = 100;
 const COMMISSION_RATE = 0.05; // 5%
+const STALE_TRANSACTION_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes for pending transactions to be considered stale
 
 // --- Social Media Logo Mapping ---
 const SocialIcon = ({ category }) => {
@@ -193,9 +189,9 @@ const ParticleContainer = ({ effect }) => {
             case 'ocean':
                 return <div key={i} className="absolute bg-blue-200 rounded-full animate-bubble" style={style}></div>;
             case 'forest':
-                 return <div key={i} className="absolute bg-green-300 rounded-full animate-leaf-fall" style={style}></div>;
+                return <div key={i} className="absolute bg-green-300 rounded-full animate-leaf-fall" style={style}></div>;
             case 'electric':
-                 return <div key={i} className="absolute bg-yellow-400 w-1 h-1 rounded-full animate-zap" style={style}></div>;
+                return <div key={i} className="absolute bg-yellow-400 w-1 h-1 rounded-full animate-zap" style={style}></div>;
             case 'mountain':
                 return <div key={i} className="absolute bg-gray-400 w-px h-px animate-snow" style={style}></div>;
             case 'windy':
@@ -419,14 +415,14 @@ export default function App() {
         };
         
         return (
-             <div className="flex min-h-screen bg-background text-text-primary">
-                 <Sidebar navigateTo={navigateTo} currentPage={page} isMobileMenuOpen={isMobileMenuOpen} setIsMobileMenuOpen={setIsMobileMenuOpen} onLogout={handleLogout} />
-                 <div className="flex-1 flex flex-col lg:ml-64">
-                     <Header user={userData} onMenuClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} formatCurrency={formatCurrency} navigateTo={navigateTo} />
-                     <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto"><PageContent /></main>
-                     <FloatingWhatsAppButton />
-                 </div>
-             </div>
+            <div className="flex min-h-screen bg-background text-text-primary">
+                <Sidebar navigateTo={navigateTo} currentPage={page} isMobileMenuOpen={isMobileMenuOpen} setIsMobileMenuOpen={setIsMobileMenuOpen} onLogout={handleLogout} />
+                <div className="flex-1 flex flex-col lg:ml-64">
+                    <Header user={userData} onMenuClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} formatCurrency={formatCurrency} navigateTo={navigateTo} />
+                    <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto"><PageContent /></main>
+                    <FloatingWhatsAppButton />
+                </div>
+            </div>
         );
     };
 
@@ -465,17 +461,17 @@ function LandingPage({ setView, template }) {
     );
 
     const FeaturesSection = () => (
-         <section id="features" className="py-20 bg-slate-800/50">
-            <div className="container mx-auto px-4 text-center">
-                <h3 className="text-3xl font-bold mb-4">Why Choose Us?</h3>
-                <p className="text-slate-400 max-w-3xl mx-auto mb-12">We are the leading SMM service provider in Pakistan, dedicated to helping you achieve your social media goals with top-tier services and unbeatable prices.</p>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                    <div className="p-6 bg-slate-900 rounded-lg"><TrendingUp className="mx-auto h-12 w-12 text-sky-500 mb-4" /><h3 className="text-xl font-bold mb-2">Fast Growth</h3><p className="text-slate-400">See results in minutes, not days. Our services are designed for rapid delivery and impact.</p></div>
-                    <div className="p-6 bg-slate-900 rounded-lg"><Users className="mx-auto h-12 w-12 text-sky-500 mb-4" /><h3 className="text-xl font-bold mb-2">Real Users</h3><p className="text-slate-400">We provide high-quality engagement from real-looking profiles to ensure authenticity.</p></div>
-                    <div className="p-6 bg-slate-900 rounded-lg"><ShieldCheck className="mx-auto h-12 w-12 text-sky-500 mb-4" /><h3 className="text-xl font-bold mb-2">Secure Payments</h3><p className="text-slate-400">Your payments are secure with multiple local options like Easypaisa and JazzCash.</p></div>
+            <section id="features" className="py-20 bg-slate-800/50">
+                <div className="container mx-auto px-4 text-center">
+                    <h3 className="text-3xl font-bold mb-4">Why Choose Us?</h3>
+                    <p className="text-slate-400 max-w-3xl mx-auto mb-12">We are the leading SMM service provider in Pakistan, dedicated to helping you achieve your social media goals with top-tier services and unbeatable prices.</p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                        <div className="p-6 bg-slate-900 rounded-lg"><TrendingUp className="mx-auto h-12 w-12 text-sky-500 mb-4" /><h3 className="text-xl font-bold mb-2">Fast Growth</h3><p className="text-slate-400">See results in minutes, not days. Our services are designed for rapid delivery and impact.</p></div>
+                        <div className="p-6 bg-slate-900 rounded-lg"><Users className="mx-auto h-12 w-12 text-sky-500 mb-4" /><h3 className="text-xl font-bold mb-2">Real Users</h3><p className="text-slate-400">We provide high-quality engagement from real-looking profiles to ensure authenticity.</p></div>
+                        <div className="p-6 bg-slate-900 rounded-lg"><ShieldCheck className="mx-auto h-12 w-12 text-sky-500 mb-4" /><h3 className="text-xl font-bold mb-2">Secure Payments</h3><p className="text-slate-400">Your payments are secure with multiple local options like Easypaisa and JazzCash.</p></div>
+                    </div>
                 </div>
-            </div>
-        </section>
+            </section>
     );
 
     const ServicesSection = () => (
@@ -496,34 +492,34 @@ function LandingPage({ setView, template }) {
     );
 
     const Footer = () => (
-         <footer className="bg-slate-900 py-8 border-t border-slate-800">
-            <div className="container mx-auto px-4 text-center text-slate-400">
-                <div className="flex justify-center gap-6 mb-4">
-                    <a href="#" className="hover:text-white"><Instagram /></a>
-                    <a href="#" className="hover:text-white"><Facebook /></a>
-                    <a href="#" className="hover:text-white"><Youtube /></a>
-                    <a href="#" className="hover:text-white"><Twitter /></a>
+            <footer className="bg-slate-900 py-8 border-t border-slate-800">
+                <div className="container mx-auto px-4 text-center text-slate-400">
+                    <div className="flex justify-center gap-6 mb-4">
+                        <a href="#" className="hover:text-white"><Instagram /></a>
+                        <a href="#" className="hover:text-white"><Facebook /></a>
+                        <a href="#" className="hover:text-white"><Youtube /></a>
+                        <a href="#" className="hover:text-white"><Twitter /></a>
+                    </div>
+                    <div className="flex justify-center gap-4 text-sm mb-4">
+                        <button onClick={() => setView('about')} className="hover:text-white">About Us</button>
+                        <span>|</span>
+                        <button onClick={() => setView('privacy')} className="hover:text-white">Privacy Policy</button>
+                        <span>|</span>
+                        <button onClick={() => setView('disclaimer')} className="hover:text-white">Disclaimer</button>
+                    </div>
+                    <p>&copy; {new Date().getFullYear()} GET GROW UP SMM Panel. All Rights Reserved.</p>
                 </div>
-                <div className="flex justify-center gap-4 text-sm mb-4">
-                    <button onClick={() => setView('about')} className="hover:text-white">About Us</button>
-                    <span>|</span>
-                    <button onClick={() => setView('privacy')} className="hover:text-white">Privacy Policy</button>
-                    <span>|</span>
-                    <button onClick={() => setView('disclaimer')} className="hover:text-white">Disclaimer</button>
-                </div>
-                <p>&copy; {new Date().getFullYear()} GET GROW UP SMM Panel. All Rights Reserved.</p>
-            </div>
-        </footer>
+            </footer>
     );
     
     const LandingHeader = () => (
-         <header className="p-4 flex justify-between items-center container mx-auto">
-            <h1 className="text-xl font-bold">GET GROW UP SMM PANEL</h1>
-            <div>
-                <button onClick={() => setView('auth')} className="px-4 py-2 text-sm font-semibold rounded-md hover:bg-slate-800">Login</button>
-                <button onClick={() => setView('auth')} className="ml-2 px-4 py-2 text-sm font-semibold rounded-md bg-sky-600 hover:bg-sky-700">Sign Up</button>
-            </div>
-        </header>
+            <header className="p-4 flex justify-between items-center container mx-auto">
+                <h1 className="text-xl font-bold">GET GROW UP SMM PANEL</h1>
+                <div>
+                    <button onClick={() => setView('auth')} className="px-4 py-2 text-sm font-semibold rounded-md hover:bg-slate-800">Login</button>
+                    <button onClick={() => setView('auth')} className="ml-2 px-4 py-2 text-sm font-semibold rounded-md bg-sky-600 hover:bg-sky-700">Sign Up</button>
+                </div>
+            </header>
     );
 
     switch (template) {
@@ -533,7 +529,7 @@ function LandingPage({ setView, template }) {
                     <header className="p-6 flex justify-between items-center container mx-auto border-b">
                         <h1 className="text-2xl font-bold text-gray-800">GET GROW UP</h1>
                         <div>
-                             <button onClick={() => setView('auth')} className="px-5 py-2 text-sm font-semibold rounded-md text-gray-700 hover:bg-gray-100">Login</button>
+                            <button onClick={() => setView('auth')} className="px-5 py-2 text-sm font-semibold rounded-md text-gray-700 hover:bg-gray-100">Login</button>
                             <button onClick={() => setView('auth')} className="ml-2 px-5 py-2 text-sm font-semibold rounded-md bg-gray-800 text-white hover:bg-gray-900">Sign Up</button>
                         </div>
                     </header>
@@ -548,40 +544,35 @@ function LandingPage({ setView, template }) {
             );
         case 'corporate':
             return (
-                 <div className="min-h-screen bg-gray-50 text-slate-800 font-sans">
-                     <header className="p-4 flex justify-between items-center container mx-auto bg-white shadow-md">
-                        <h1 className="text-xl font-bold text-blue-800">GET GROW UP | Corporate</h1>
-                        <div>
-                             <button onClick={() => setView('auth')} className="px-4 py-2 text-sm font-semibold rounded-md text-blue-700 hover:bg-blue-50">Login</button>
-                            <button onClick={() => setView('auth')} className="ml-2 px-4 py-2 text-sm font-semibold rounded-md bg-blue-700 text-white hover:bg-blue-800">Get a Quote</button>
+                <div className="min-h-screen flex">
+                    <div className="w-1/2 bg-cover bg-center" style={{backgroundImage: "url('https://placehold.co/1000x1200/3b82f6/ffffff?text=SMM')"}}></div>
+                    <div className="w-1/2 flex items-center justify-center p-12">
+                        <div className="w-full max-w-md">
+                            <h1 className="text-2xl font-bold text-blue-800 mb-4">GET GROW UP</h1>
+                            <h2 className="text-3xl font-bold text-gray-800 mb-2">{isLoginView ? 'Sign In to Your Account' : 'Create a New Account'}</h2>
+                            <p className="text-gray-600 mb-6">Manage your social media growth strategy.</p>
+                           {error && <p className="bg-red-100 text-red-700 p-3 rounded-lg text-sm mb-4">{error}</p>}
+                           <form onSubmit={handleEmailPasswordSubmit} className="space-y-4">
+                                <input type="email" placeholder="business.email@example.com" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 transition" required />
+                                <input type={showPassword ? "text" : "password"} placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 transition" required />
+                                <button type="submit" className="w-full bg-blue-700 text-white font-bold py-3 rounded-md hover:bg-blue-800 transition">{isLoginView ? 'Sign In' : 'Create Account'}</button>
+                           </form>
+                            <button onClick={handleGoogleSignIn} className="w-full mt-4 flex items-center justify-center py-3 border border-gray-300 rounded-md hover:bg-gray-50 transition"><img className="w-5 h-5 mr-3" src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google logo" />Continue with Google</button>
+                            <p className="text-sm text-center text-gray-500 mt-6">{isLoginView ? "Don't have an account?" : "Already have an account?"}<button onClick={() => { setIsLoginView(!isLoginView); setError(''); }} className="font-semibold text-blue-700 hover:underline ml-1">{isLoginView ? 'Sign Up' : 'Login'}</button></p>
                         </div>
-                     </header>
-                     <main className="container mx-auto grid md:grid-cols-2 gap-12 items-center py-20 px-4">
-                         <div>
-                             <h2 className="text-5xl font-extrabold leading-tight mb-4">Your Partner in Digital Growth</h2>
-                             <p className="text-lg text-slate-600 max-w-xl mb-8">We provide enterprise-level SMM solutions to scale your brand's social media strategy with measurable results and dedicated support.</p>
-                             <button onClick={() => setView('auth')} className="bg-blue-700 text-white font-bold py-3 px-8 rounded-md text-lg hover:bg-blue-800 transition-all">
-                                 Explore Services
-                             </button>
-                         </div>
-                         <div className="bg-blue-600 p-8 rounded-lg shadow-xl">
-                             <img src="https://placehold.co/600x400/ffffff/3b82f6?text=Analytics" alt="Analytics graph" className="rounded-md"/>
-                         </div>
-                     </main>
-                 </div>
+                    </div>
+                </div>
             );
         default:
             return (
-                <div className="min-h-screen bg-slate-900 text-white font-sans overflow-hidden">
-                    <div className="absolute inset-0 z-0 opacity-50">
+                <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 overflow-hidden relative">
+                    <div className="absolute inset-0 z-0">
                         <ParticleContainer effect="default"/>
                     </div>
-                    <div className="relative z-10">
-                        <LandingHeader/>
-                        <HeroSection/>
-                        <FeaturesSection/>
-                        <ServicesSection/>
-                        <Footer/>
+                    <div className="w-full max-w-md bg-white/10 backdrop-blur-md rounded-2xl shadow-lg p-8 space-y-6 z-10 animate-slide-in">
+                        <button onClick={() => setView('landing')} className="absolute top-4 left-4 text-white hover:text-sky-400">&larr; Back to Home</button>
+                        <div><h1 className="text-3xl font-bold text-white text-center">GET GROW UP</h1><p className="text-center text-slate-300 mt-2">{isLoginView ? 'Welcome Back!' : 'Create Your Account'}</p></div>
+                        {commonForm}
                     </div>
                 </div>
             );
@@ -713,24 +704,24 @@ function LoginPage({ setView, showAlert, template }) {
             );
         case 'corporate':
             return (
-                 <div className="min-h-screen flex">
-                     <div className="w-1/2 bg-cover bg-center" style={{backgroundImage: "url('https://placehold.co/1000x1200/3b82f6/ffffff?text=SMM')"}}></div>
-                     <div className="w-1/2 flex items-center justify-center p-12">
-                         <div className="w-full max-w-md">
-                             <h1 className="text-2xl font-bold text-blue-800 mb-4">GET GROW UP</h1>
-                             <h2 className="text-3xl font-bold text-gray-800 mb-2">{isLoginView ? 'Sign In to Your Account' : 'Create a New Account'}</h2>
-                             <p className="text-gray-600 mb-6">Manage your social media growth strategy.</p>
+                <div className="min-h-screen flex">
+                    <div className="w-1/2 bg-cover bg-center" style={{backgroundImage: "url('https://placehold.co/1000x1200/3b82f6/ffffff?text=SMM')"}}></div>
+                    <div className="w-1/2 flex items-center justify-center p-12">
+                        <div className="w-full max-w-md">
+                            <h1 className="text-2xl font-bold text-blue-800 mb-4">GET GROW UP</h1>
+                            <h2 className="text-3xl font-bold text-gray-800 mb-2">{isLoginView ? 'Sign In to Your Account' : 'Create a New Account'}</h2>
+                            <p className="text-gray-600 mb-6">Manage your social media growth strategy.</p>
                            {error && <p className="bg-red-100 text-red-700 p-3 rounded-lg text-sm mb-4">{error}</p>}
                            <form onSubmit={handleEmailPasswordSubmit} className="space-y-4">
-                               <input type="email" placeholder="business.email@example.com" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 transition" required />
-                               <input type={showPassword ? "text" : "password"} placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 transition" required />
-                               <button type="submit" className="w-full bg-blue-700 text-white font-bold py-3 rounded-md hover:bg-blue-800 transition">{isLoginView ? 'Sign In' : 'Create Account'}</button>
+                                <input type="email" placeholder="business.email@example.com" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 transition" required />
+                                <input type={showPassword ? "text" : "password"} placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 transition" required />
+                                <button type="submit" className="w-full bg-blue-700 text-white font-bold py-3 rounded-md hover:bg-blue-800 transition">{isLoginView ? 'Sign In' : 'Create Account'}</button>
                            </form>
-                           <button onClick={handleGoogleSignIn} className="w-full mt-4 flex items-center justify-center py-3 border border-gray-300 rounded-md hover:bg-gray-50 transition"><img className="w-5 h-5 mr-3" src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google logo" />Continue with Google</button>
-                           <p className="text-sm text-center text-gray-500 mt-6">{isLoginView ? "Don't have an account?" : "Already have an account?"}<button onClick={() => { setIsLoginView(!isLoginView); setError(''); }} className="font-semibold text-blue-700 hover:underline ml-1">{isLoginView ? 'Sign Up' : 'Login'}</button></p>
-                         </div>
-                     </div>
-                 </div>
+                            <button onClick={handleGoogleSignIn} className="w-full mt-4 flex items-center justify-center py-3 border border-gray-300 rounded-md hover:bg-gray-50 transition"><img className="w-5 h-5 mr-3" src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google logo" />Continue with Google</button>
+                            <p className="text-sm text-center text-gray-500 mt-6">{isLoginView ? "Don't have an account?" : "Already have an account?"}<button onClick={() => { setIsLoginView(!isLoginView); setError(''); }} className="font-semibold text-blue-700 hover:underline ml-1">{isLoginView ? 'Sign Up' : 'Login'}</button></p>
+                        </div>
+                    </div>
+                </div>
             );
         default:
             return (
@@ -889,7 +880,7 @@ function AutomatedPaymentGateway({ user, showAlert }) {
             
             <div className="my-4 flex justify-center items-center p-4 bg-background-alt rounded-lg">
                 {/* --- FIX: Using official Workup Pay logo --- */}
-                <img src="https://workuppay.co/assets/images/logoIcon/logo.png" alt="Workup Pay Logo" className="h-10" />
+                <img src="https://workuppay.co/assets/images/logo_icon/logo_dark.png" alt="Workup Pay Logo" className="h-10" />
             </div>
 
             <form onSubmit={handlePaymentSubmit} className="mt-6 space-y-4">
@@ -1064,10 +1055,10 @@ function PaymentModal({ user, method, onClose, onSubmit }) {
         if (receiptFile) {
             const formData = new FormData();
             formData.append('file', receiptFile);
-            formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+            formData.append('upload_preset', "mubashir"); // Use your Cloudinary upload preset
 
             try {
-                const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
+                const response = await fetch(`https://api.cloudinary.com/v1_1/dis1ptaip/image/upload`, { // Use your Cloudinary cloud name
                     method: 'POST',
                     body: formData,
                 });
@@ -1488,6 +1479,7 @@ function NewOrderPage({ service, userBalance, onSubmit, onBack, formatCurrency, 
                         <div>
                             <label htmlFor="quantity" className="block text-sm font-medium text-text-secondary mb-1">Quantity</label>
                             <input type="number" id="quantity" value={quantity} onChange={(e) => setQuantity(e.target.value)} className="w-full p-2 border border-border-color rounded-lg focus:ring-2 focus:ring-primary transition bg-input" placeholder={`Min: ${service.min}, Max: ${service.max}`} required />
+                            <p className="text-xs text-text-secondary mt-1">Min: ${service.min} / Max: ${service.max}</p>
                         </div>
                         <div className="bg-background text-text-primary p-2 rounded-lg text-center flex flex-col justify-center">
                             <p className="text-sm font-medium">Total Charge</p>
@@ -1548,7 +1540,7 @@ function SupportPage({ user, showAlert }) {
             subject,
             message,
             status: 'Open',
-            createdAt: Timestamp.now(), 
+            createdAt: Timestamp.now(),
             replies: []
         };
 
@@ -1670,10 +1662,10 @@ function ProfileSettings({ user, userData }) {
         if (profilePic) {
             const formData = new FormData();
             formData.append('file', profilePic);
-            formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+            formData.append('upload_preset', "mubashir"); // Use your Cloudinary upload preset
 
             try {
-                const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
+                const response = await fetch(`https://api.cloudinary.com/v1_1/dis1ptaip/image/upload`, { // Use your Cloudinary cloud name
                     method: 'POST',
                     body: formData,
                 });
@@ -2294,6 +2286,16 @@ function TransactionsPage({ user, formatCurrency }) {
         return () => unsubscribe();
     }, [user]);
 
+    const getStatusDisplay = (status, createdAt) => {
+        const now = new Date();
+        const createdDate = createdAt?.toDate ? createdAt.toDate() : null;
+
+        if (status === 'pending' && createdDate && (now.getTime() - createdDate.getTime()) > STALE_TRANSACTION_THRESHOLD_MS) {
+            return 'pending_stale'; // Custom status for stale pending transactions
+        }
+        return status;
+    };
+
     return (
         <div className="bg-card p-4 sm:p-6 rounded-lg shadow-md">
             <h2 className="text-xl font-bold text-text-primary mb-4">Transaction History</h2>
@@ -2320,7 +2322,7 @@ function TransactionsPage({ user, formatCurrency }) {
                                     <td className="p-3 font-mono text-text-primary">{tx.gatewayTransactionId || tx.id}</td>
                                     <td className="p-3 text-text-secondary">{formatCurrency(tx.amount)}</td>
                                     <td className="p-3 text-text-secondary">{tx.gateway || 'N/A'}</td>
-                                    <td className="p-3 text-center"><StatusBadge status={tx.status} /></td>
+                                    <td className="p-3 text-center"><StatusBadge status={getStatusDisplay(tx.status, tx.createdAt)} /></td>
                                 </tr>
                             ))}
                         </tbody>
@@ -2343,14 +2345,17 @@ const StatusBadge = ({ status }) => {
         Completed: 'bg-green-100 text-green-800', completed: 'bg-green-100 text-green-800',
         Processing: 'bg-blue-100 text-blue-800',
         Pending: 'bg-yellow-100 text-yellow-800', pending: 'bg-yellow-100 text-yellow-800',
-        Canceled: 'bg-red-100 text-red-800', failed: 'bg-red-100 text-red-800',
+        Canceled: 'bg-red-100 text-red-800', canceled: 'bg-red-100 text-red-800',
         Partial: 'bg-purple-100 text-purple-800',
         Open: 'bg-sky-100 text-sky-800',
         Answered: 'bg-indigo-100 text-indigo-800',
         Resolved: 'bg-gray-100 text-gray-800', 'resolved': 'bg-gray-200 text-gray-800',
-        rejected: 'bg-red-100 text-red-800'
+        rejected: 'bg-red-100 text-red-800',
+        failed: 'bg-red-200 text-red-800',
+        pending_stale: 'bg-orange-100 text-orange-800', // New style for stale pending
     };
-    return (<span className={`px-2.5 py-1 text-xs font-semibold rounded-full capitalize ${statusMap[status] || 'bg-gray-100 text-gray-800'}`}>{status}</span>);
+    const displayText = status === 'pending_stale' ? 'Pending (Stale)' : status;
+    return (<span className={`px-2.5 py-1 text-xs font-semibold rounded-full capitalize ${statusMap[status] || 'bg-gray-100 text-gray-800'}`}>{displayText}</span>);
 };
 
 // --- NEW Confirmation Modal ---
@@ -2375,3 +2380,4 @@ function ConfirmationModal({ message, onConfirm, onCancel }) {
         </div>
     );
 }
+
