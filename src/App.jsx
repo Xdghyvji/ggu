@@ -54,7 +54,7 @@ const firebaseConfig = {
 const CURRENCY_SYMBOL = 'Rs';
 const MIN_WITHDRAWAL = 100;
 const COMMISSION_RATE = 0.05; // 5%
-const STALE_TRANSACTION_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes for pending transactions to be considered stale
+const STALE_TRANSACTION_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
 
 // --- Social Media Logo Mapping ---
 const SocialIcon = ({ category }) => {
@@ -815,7 +815,7 @@ function FloatingWhatsAppButton() {
     )
 }
 
-// --- Automated Payment Gateway Component (UPDATED FOR NETLIFY) ---
+// --- Automated Payment Gateway Component (CORRECTED) ---
 function AutomatedPaymentGateway({ user, showAlert }) {
     const [amount, setAmount] = useState('');
     const [loading, setLoading] = useState(false);
@@ -825,7 +825,6 @@ function AutomatedPaymentGateway({ user, showAlert }) {
         e.preventDefault();
         const paymentAmount = parseFloat(amount);
 
-        // --- FIX: Updated minimum payment amount to 1 ---
         if (isNaN(paymentAmount) || paymentAmount < 1) {
             setError('Minimum deposit is Rs1.');
             return;
@@ -835,28 +834,36 @@ function AutomatedPaymentGateway({ user, showAlert }) {
         setError('');
 
         try {
-            // Get the user's auth token for making a secure, authenticated API call
             const token = await user.getIdToken();
+            
+            // **BUG FIX & VERIFICATION:** Ensure this URL is correct and log it.
+            const functionUrl = '/.netlify/functions/createPaymentSession';
+            console.log(`Calling Netlify function: ${functionUrl}`);
 
-            // Call the Netlify Function endpoint
-            const response = await fetch('/.netlify/functions/createPaymentSession', {
+            const response = await fetch(functionUrl, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}` // Send token for authentication
+                    'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify({ amount: paymentAmount }),
             });
 
             if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Failed to create payment session.');
+                // Try to parse the error as JSON, but have a fallback.
+                let errorData;
+                try {
+                    errorData = await response.json();
+                } catch (jsonError) {
+                    // If the response is not JSON, use the status text.
+                    throw new Error(response.statusText || 'Failed to create payment session.');
+                }
+                throw new Error(errorData.error || 'An unknown error occurred.');
             }
 
             const { paymentUrl } = await response.json();
 
             if (paymentUrl) {
-                // Redirect the user to the Workup Pay checkout page
                 window.location.href = paymentUrl;
             } else {
                 throw new Error('Could not retrieve payment URL.');
@@ -879,7 +886,6 @@ function AutomatedPaymentGateway({ user, showAlert }) {
             </p>
             
             <div className="my-4 flex justify-center items-center p-4 bg-background-alt rounded-lg">
-                {/* --- FIX: Using official Workup Pay logo --- */}
                 <img src="https://workuppay.co/assets/images/logo_icon/logo_dark.png" alt="Workup Pay Logo" className="h-10" />
             </div>
 
@@ -898,7 +904,7 @@ function AutomatedPaymentGateway({ user, showAlert }) {
                             className="w-full p-3 pl-4 border border-border-color rounded-lg bg-input focus:ring-2 focus:ring-primary transition"
                             placeholder="e.g., 1000"
                             required
-                            min="1" // --- FIX: Updated min attribute ---
+                            min="1"
                         />
                     </div>
                     {error && <p className="text-red-500 text-xs mt-1">{error}</p>}
@@ -953,12 +959,10 @@ function AddFundsPage({ user, userData, showAlert }) {
         setModalOpen(true);
     };
 
-    // --- FIX: Simplified manual fund request logic ---
     const handleRequestSubmit = async (requestData) => {
         if (!user) return;
         
         try {
-            // Use a transaction to ensure atomicity
             await runTransaction(db, async (transaction) => {
                 const trxIdRef = doc(db, "used_transaction_ids", requestData.trxId);
                 const trxIdDoc = await transaction.get(trxIdRef);
@@ -967,16 +971,14 @@ function AddFundsPage({ user, userData, showAlert }) {
                     throw new Error("This Transaction ID has already been used. Please check the ID and try again.");
                 }
 
-                // Create the fund request in the user's subcollection
                 const fundRequestRef = doc(collection(db, "users", user.uid, "fund_requests"));
                 transaction.set(fundRequestRef, {
                     ...requestData,
-                    userEmail: user.email, // Add user email for admin reference
+                    userEmail: user.email,
                     status: 'pending',
                     date: new Date().toISOString()
                 });
                 
-                // Mark the transaction ID as used
                 transaction.set(trxIdRef, { 
                     userId: user.uid, 
                     usedAt: serverTimestamp() 
@@ -2031,17 +2033,14 @@ function InviteAndEarnPage({ user, userData, formatCurrency, showAlert }) {
 
     const referralLink = `${window.location.origin}${window.location.pathname}?ref=${user.uid}`;
 
-    // --- FIX: Use a real-time listener for referrals and their commissions ---
     useEffect(() => {
         if (!user) return;
         setLoadingReferrals(true);
 
-        // Listen for users who were referred by the current user
         const referralsQuery = query(collection(db, "users"), where("referredBy", "==", user.uid));
         const unsubscribeReferrals = onSnapshot(referralsQuery, async (snapshot) => {
             const referredUsersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-            // For each referred user, get their total commission paid to the referrer
             const commissionsQuery = query(collection(db, `users/${user.uid}/commissions`));
             const commissionsSnapshot = await getDocs(commissionsQuery);
             
@@ -2108,11 +2107,9 @@ function InviteAndEarnPage({ user, userData, formatCurrency, showAlert }) {
 
             const batch = writeBatch(db);
 
-            // Deduct from user's commission balance
             const userRef = doc(db, "users", user.uid);
             batch.update(userRef, { commissionBalance: newBalance });
 
-            // Create a withdrawal request for the admin
             const requestRef = doc(collection(db, "withdrawal_requests"));
             batch.set(requestRef, {
                 userId: user.uid,
@@ -2380,4 +2377,3 @@ function ConfirmationModal({ message, onConfirm, onCancel }) {
         </div>
     );
 }
-
