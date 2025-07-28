@@ -836,9 +836,11 @@ function AutomatedPaymentGateway({ user, showAlert }) {
         try {
             const token = await user.getIdToken();
             
-            // **BUG FIX & VERIFICATION:** Ensure this URL is correct and log it.
-            const functionUrl = '/.netlify/functions/createPaymentSession';
-            console.log(`Calling Netlify function: ${functionUrl}`);
+            // **BUG FIX & VERIFICATION:** This now points to the new, renamed function.
+            const functionUrl = '/.netlify/functions/initiate-payment';
+            
+            // **DEBUGGING STEP:** This log is crucial. Check your browser's developer console for this message.
+            console.log(`%c[DEBUG] Calling Netlify function: ${functionUrl}`, 'color: #00ff00; font-weight: bold;');
 
             const response = await fetch(functionUrl, {
                 method: 'POST',
@@ -850,12 +852,10 @@ function AutomatedPaymentGateway({ user, showAlert }) {
             });
 
             if (!response.ok) {
-                // Try to parse the error as JSON, but have a fallback.
                 let errorData;
                 try {
                     errorData = await response.json();
                 } catch (jsonError) {
-                    // If the response is not JSON, use the status text.
                     throw new Error(response.statusText || 'Failed to create payment session.');
                 }
                 throw new Error(errorData.error || 'An unknown error occurred.');
@@ -880,7 +880,8 @@ function AutomatedPaymentGateway({ user, showAlert }) {
 
     return (
         <div className="bg-card p-6 rounded-lg shadow-md border border-primary/20">
-            <h2 className="text-2xl font-bold text-text-primary mb-2">Automatic Payment</h2>
+            {/* VISUAL CUE: Check for this (v2) on your live site */}
+            <h2 className="text-2xl font-bold text-text-primary mb-2">Automatic Payment (v2)</h2>
             <p className="text-text-secondary mb-4">
                 Add funds instantly using our secure payment gateway.
             </p>
