@@ -209,7 +209,7 @@ const ParticleContainer = ({ effect }) => {
 
 
 // --- Main App Component ---
-function App() {
+export default function App() {
     const [user, setUser] = useState(null);
     const [userData, setUserData] = useState(null);
     const [orders, setOrders] = useState([]);
