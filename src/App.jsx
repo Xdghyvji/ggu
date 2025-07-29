@@ -40,15 +40,17 @@ import {
 } from 'firebase/firestore';
 
 // --- Firebase Configuration ---
+// IMPORTANT: In a real production app, use environment variables for this configuration.
 const firebaseConfig = {
     apiKey: "AIzaSyBgjU9fzFsfx6-gv4p0WWH77_U5BPk69A0",
     authDomain: "smmp-4b3cc.firebaseapp.com",
     projectId: "smmp-4b3cc",
-    storageBucket: "smmp-4b3cc.firebasestorage.app",
+    storageBucket: "smmp-4b3cc.appspot.com",
     messagingSenderId: "43467456148",
     appId: "1:43467456148:web:368b011abf362791edfe81",
     measurementId: "G-Y6HBHEL742"
 };
+
 
 // --- Currency & Rate Constants ---
 const CURRENCY_SYMBOL = 'Rs';
@@ -76,6 +78,7 @@ const db = getFirestore(app);
 
 // --- Dummy logAdminAction for frontend ---
 const logAdminAction = async (action, details) => {
+    // In a real app, this could be a call to a cloud function to log actions.
     console.log("Log Action:", action, details);
 };
 
@@ -206,7 +209,7 @@ const ParticleContainer = ({ effect }) => {
 
 
 // --- Main App Component ---
-export default function App() {
+function App() {
     const [user, setUser] = useState(null);
     const [userData, setUserData] = useState(null);
     const [orders, setOrders] = useState([]);
@@ -446,82 +449,33 @@ export default function App() {
 
 // --- Landing Page ---
 function LandingPage({ setView, template }) {
+    // This is a self-contained component for the landing page header
+    const LandingHeader = () => (
+        <header className="p-4 flex justify-between items-center container mx-auto text-white">
+            <h1 className="text-xl font-bold">GET GROW UP SMM PANEL</h1>
+            <div>
+                <button onClick={() => setView('auth')} className="px-4 py-2 text-sm font-semibold rounded-md hover:bg-slate-800">Login</button>
+                <button onClick={() => setView('auth')} className="ml-2 px-4 py-2 text-sm font-semibold rounded-md bg-sky-600 hover:bg-sky-700">Sign Up</button>
+            </div>
+        </header>
+    );
+
+    // This is a self-contained component for the main hero section
     const HeroSection = () => (
-        <main className="flex flex-col items-center justify-center text-center px-4" style={{ minHeight: '80vh' }}>
-            <h2 className="text-5xl md:text-6xl font-extrabold leading-tight mb-4 animate-fade-in-down">
+        <main className="flex flex-col items-center justify-center text-center px-4 text-white" style={{ minHeight: '80vh' }}>
+            <h2 className="text-5xl md:text-6xl font-extrabold leading-tight mb-4">
                 Elevate Your Social Media Presence
             </h2>
-            <p className="text-xl text-slate-300 max-w-2xl mb-8 animate-fade-in-up">
-                The #1 SMM Panel in Pakistan for boosting your followers, likes, and views across all major platforms. Fast, reliable, and secure.
+            <p className="text-xl text-slate-300 max-w-2xl mb-8">
+                The #1 SMM Panel in Pakistan for boosting your followers, likes, and views.
             </p>
-            <button onClick={() => setView('auth')} className="bg-sky-600 text-white font-bold py-3 px-8 rounded-full text-lg hover:bg-sky-700 transition-transform hover:scale-105 animate-bounce">
+            <button onClick={() => setView('auth')} className="bg-sky-600 text-white font-bold py-3 px-8 rounded-full text-lg hover:bg-sky-700 transition-transform hover:scale-105">
                 Get Started Now
             </button>
         </main>
     );
 
-    const FeaturesSection = () => (
-            <section id="features" className="py-20 bg-slate-800/50">
-                <div className="container mx-auto px-4 text-center">
-                    <h3 className="text-3xl font-bold mb-4">Why Choose Us?</h3>
-                    <p className="text-slate-400 max-w-3xl mx-auto mb-12">We are the leading SMM service provider in Pakistan, dedicated to helping you achieve your social media goals with top-tier services and unbeatable prices.</p>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                        <div className="p-6 bg-slate-900 rounded-lg"><TrendingUp className="mx-auto h-12 w-12 text-sky-500 mb-4" /><h3 className="text-xl font-bold mb-2">Fast Growth</h3><p className="text-slate-400">See results in minutes, not days. Our services are designed for rapid delivery and impact.</p></div>
-                        <div className="p-6 bg-slate-900 rounded-lg"><Users className="mx-auto h-12 w-12 text-sky-500 mb-4" /><h3 className="text-xl font-bold mb-2">Real Users</h3><p className="text-slate-400">We provide high-quality engagement from real-looking profiles to ensure authenticity.</p></div>
-                        <div className="p-6 bg-slate-900 rounded-lg"><ShieldCheck className="mx-auto h-12 w-12 text-sky-500 mb-4" /><h3 className="text-xl font-bold mb-2">Secure Payments</h3><p className="text-slate-400">Your payments are secure with multiple local options like Easypaisa and JazzCash.</p></div>
-                    </div>
-                </div>
-            </section>
-    );
-
-    const ServicesSection = () => (
-        <section id="services" className="py-20">
-            <div className="container mx-auto px-4 text-center">
-                <h3 className="text-3xl font-bold mb-4">Our Services</h3>
-                <p className="text-slate-400 max-w-3xl mx-auto mb-12">We cover all major social media platforms to ensure your brand gets the visibility it deserves.</p>
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-8 text-slate-300">
-                    <div className="flex flex-col items-center p-4"><Instagram size={40} className="mb-2" /><span>Instagram</span></div>
-                    <div className="flex flex-col items-center p-4"><Facebook size={40} className="mb-2" /><span>Facebook</span></div>
-                    <div className="flex flex-col items-center p-4"><Youtube size={40} className="mb-2" /><span>YouTube</span></div>
-                    <div className="flex flex-col items-center p-4"><Music size={40} className="mb-2" /><span>TikTok</span></div>
-                    <div className="flex flex-col items-center p-4"><MessageSquare size={40} className="mb-2" /><span>WhatsApp</span></div>
-                    <div className="flex flex-col items-center p-4"><Send size={40} className="mb-2" /><span>Telegram</span></div>
-                </div>
-            </div>
-        </section>
-    );
-
-    const Footer = () => (
-            <footer className="bg-slate-900 py-8 border-t border-slate-800">
-                <div className="container mx-auto px-4 text-center text-slate-400">
-                    <div className="flex justify-center gap-6 mb-4">
-                        <a href="#" className="hover:text-white"><Instagram /></a>
-                        <a href="#" className="hover:text-white"><Facebook /></a>
-                        <a href="#" className="hover:text-white"><Youtube /></a>
-                        <a href="#" className="hover:text-white"><Twitter /></a>
-                    </div>
-                    <div className="flex justify-center gap-4 text-sm mb-4">
-                        <button onClick={() => setView('about')} className="hover:text-white">About Us</button>
-                        <span>|</span>
-                        <button onClick={() => setView('privacy')} className="hover:text-white">Privacy Policy</button>
-                        <span>|</span>
-                        <button onClick={() => setView('disclaimer')} className="hover:text-white">Disclaimer</button>
-                    </div>
-                    <p>&copy; {new Date().getFullYear()} GET GROW UP SMM Panel. All Rights Reserved.</p>
-                </div>
-            </footer>
-    );
-    
-    const LandingHeader = () => (
-            <header className="p-4 flex justify-between items-center container mx-auto">
-                <h1 className="text-xl font-bold">GET GROW UP SMM PANEL</h1>
-                <div>
-                    <button onClick={() => setView('auth')} className="px-4 py-2 text-sm font-semibold rounded-md hover:bg-slate-800">Login</button>
-                    <button onClick={() => setView('auth')} className="ml-2 px-4 py-2 text-sm font-semibold rounded-md bg-sky-600 hover:bg-sky-700">Sign Up</button>
-                </div>
-            </header>
-    );
-
+    // FIX: The templates are now self-contained and don't rely on external state.
     switch (template) {
         case 'minimal':
             return (
@@ -546,38 +500,33 @@ function LandingPage({ setView, template }) {
             return (
                 <div className="min-h-screen flex">
                     <div className="w-1/2 bg-cover bg-center" style={{backgroundImage: "url('https://placehold.co/1000x1200/3b82f6/ffffff?text=SMM')"}}></div>
-                    <div className="w-1/2 flex items-center justify-center p-12">
-                        <div className="w-full max-w-md">
+                    <div className="w-1/2 flex flex-col items-center justify-center p-12">
+                         <div className="w-full max-w-md">
                             <h1 className="text-2xl font-bold text-blue-800 mb-4">GET GROW UP</h1>
-                            <h2 className="text-3xl font-bold text-gray-800 mb-2">{isLoginView ? 'Sign In to Your Account' : 'Create a New Account'}</h2>
-                            <p className="text-gray-600 mb-6">Manage your social media growth strategy.</p>
-                           {error && <p className="bg-red-100 text-red-700 p-3 rounded-lg text-sm mb-4">{error}</p>}
-                           <form onSubmit={handleEmailPasswordSubmit} className="space-y-4">
-                                <input type="email" placeholder="business.email@example.com" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 transition" required />
-                                <input type={showPassword ? "text" : "password"} placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 transition" required />
-                                <button type="submit" className="w-full bg-blue-700 text-white font-bold py-3 rounded-md hover:bg-blue-800 transition">{isLoginView ? 'Sign In' : 'Create Account'}</button>
-                           </form>
-                            <button onClick={handleGoogleSignIn} className="w-full mt-4 flex items-center justify-center py-3 border border-gray-300 rounded-md hover:bg-gray-50 transition"><img className="w-5 h-5 mr-3" src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google logo" />Continue with Google</button>
-                            <p className="text-sm text-center text-gray-500 mt-6">{isLoginView ? "Don't have an account?" : "Already have an account?"}<button onClick={() => { setIsLoginView(!isLoginView); setError(''); }} className="font-semibold text-blue-700 hover:underline ml-1">{isLoginView ? 'Sign Up' : 'Login'}</button></p>
+                            <h2 className="text-4xl font-bold text-gray-800 mb-2">Your Partner in Digital Growth</h2>
+                             <p className="text-gray-600 mb-6">We provide enterprise-level solutions to supercharge your social media strategy. Sign up to gain access to our exclusive services.</p>
+                             <button onClick={() => setView('auth')} className="bg-blue-700 text-white font-bold py-3 px-6 rounded-md hover:bg-blue-800 transition">
+                                 Login or Sign Up
+                             </button>
                         </div>
                     </div>
                 </div>
             );
-        default:
+        default: // 'default' template
             return (
-                <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 overflow-hidden relative">
+                <div className="min-h-screen bg-slate-900 relative">
                     <div className="absolute inset-0 z-0">
                         <ParticleContainer effect="default"/>
                     </div>
-                    <div className="w-full max-w-md bg-white/10 backdrop-blur-md rounded-2xl shadow-lg p-8 space-y-6 z-10 animate-slide-in">
-                        <button onClick={() => setView('landing')} className="absolute top-4 left-4 text-white hover:text-sky-400">&larr; Back to Home</button>
-                        <div><h1 className="text-3xl font-bold text-white text-center">GET GROW UP</h1><p className="text-center text-slate-300 mt-2">{isLoginView ? 'Welcome Back!' : 'Create Your Account'}</p></div>
-                        {commonForm}
+                    <div className="relative z-10">
+                        <LandingHeader />
+                        <HeroSection />
                     </div>
                 </div>
             );
     }
 }
+
 
 // --- Content Pages ---
 function StaticPage({ title, children, setView }) {
@@ -705,8 +654,8 @@ function LoginPage({ setView, showAlert, template }) {
         case 'corporate':
             return (
                 <div className="min-h-screen flex">
-                    <div className="w-1/2 bg-cover bg-center" style={{backgroundImage: "url('https://placehold.co/1000x1200/3b82f6/ffffff?text=SMM')"}}></div>
-                    <div className="w-1/2 flex items-center justify-center p-12">
+                    <div className="w-1/2 bg-cover bg-center hidden lg:block" style={{backgroundImage: "url('https://placehold.co/1000x1200/3b82f6/ffffff?text=SMM')"}}></div>
+                    <div className="w-full lg:w-1/2 flex items-center justify-center p-12">
                         <div className="w-full max-w-md">
                             <h1 className="text-2xl font-bold text-blue-800 mb-4">GET GROW UP</h1>
                             <h2 className="text-3xl font-bold text-gray-800 mb-2">{isLoginView ? 'Sign In to Your Account' : 'Create a New Account'}</h2>
@@ -729,7 +678,7 @@ function LoginPage({ setView, showAlert, template }) {
                     <div className="absolute inset-0 z-0">
                         <ParticleContainer effect="default"/>
                     </div>
-                    <div className="w-full max-w-md bg-white/10 backdrop-blur-md rounded-2xl shadow-lg p-8 space-y-6 z-10 animate-slide-in">
+                    <div className="w-full max-w-md bg-white/10 backdrop-blur-md rounded-2xl shadow-lg p-8 space-y-6 z-10">
                         <button onClick={() => setView('landing')} className="absolute top-4 left-4 text-white hover:text-sky-400">&larr; Back to Home</button>
                         <div><h1 className="text-3xl font-bold text-white text-center">GET GROW UP</h1><p className="text-center text-slate-300 mt-2">{isLoginView ? 'Welcome Back!' : 'Create Your Account'}</p></div>
                         {commonForm}
@@ -739,6 +688,8 @@ function LoginPage({ setView, showAlert, template }) {
     }
 }
 
+// --- Layout Components ---
+// ... (All other components from the original file remain the same)
 // --- Layout Components ---
 function Sidebar({ navigateTo, currentPage, isMobileMenuOpen, setIsMobileMenuOpen, onLogout }) {
     const navItems = [
@@ -836,10 +787,9 @@ function AutomatedPaymentGateway({ user, showAlert }) {
         try {
             const token = await user.getIdToken();
             
-            // **BUG FIX & VERIFICATION:** This now points to the new, renamed function.
+            // This now points to the new, renamed function.
             const functionUrl = '/.netlify/functions/initiate-payment';
             
-            // **DEBUGGING STEP:** This log is crucial. Check your browser's developer console for this message.
             console.log(`%c[DEBUG] Calling Netlify function: ${functionUrl}`, 'color: #00ff00; font-weight: bold;');
 
             const response = await fetch(functionUrl, {
@@ -880,8 +830,7 @@ function AutomatedPaymentGateway({ user, showAlert }) {
 
     return (
         <div className="bg-card p-6 rounded-lg shadow-md border border-primary/20">
-            {/* VISUAL CUE: Check for this (v2) on your live site */}
-            <h2 className="text-2xl font-bold text-text-primary mb-2">Automatic Payment (v2)</h2>
+            <h2 className="text-2xl font-bold text-text-primary mb-2">Automatic Payment</h2>
             <p className="text-text-secondary mb-4">
                 Add funds instantly using our secure payment gateway.
             </p>
@@ -977,7 +926,7 @@ function AddFundsPage({ user, userData, showAlert }) {
                     ...requestData,
                     userEmail: user.email,
                     status: 'pending',
-                    date: new Date().toISOString()
+                    date: Timestamp.now() // Use Firestore Timestamp
                 });
                 
                 transaction.set(trxIdRef, { 
@@ -1127,8 +1076,8 @@ function Dashboard({ stats, formatCurrency, placeNewOrder, userData, navigateTo,
     const RankIcon = rank.icon;
 
     return (
-        <div className="relative space-y-8 animate-fade-in">
-            <div className="bg-card/80 backdrop-blur-sm p-6 rounded-lg shadow-lg border border-border-color/50 animate-slide-in-down">
+        <div className="relative space-y-8">
+            <div className="bg-card/80 backdrop-blur-sm p-6 rounded-lg shadow-lg border border-border-color/50">
                 <h2 className="text-2xl font-bold text-text-primary">
                     Welcome back, <span className="text-primary">{userData.name}!</span>
                 </h2>
@@ -1138,7 +1087,7 @@ function Dashboard({ stats, formatCurrency, placeNewOrder, userData, navigateTo,
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <StatCard icon={Wallet} title="Current Balance" value={formatCurrency(stats.balance)} color="bg-green-500" />
                 <StatCard icon={ShoppingCart} title="Total Spent" value={formatCurrency(stats.totalSpent)} color="bg-amber-500" />
-                <div className="bg-card p-6 rounded-lg shadow-md flex items-center animate-fade-in-up" style={{ animationDelay: '0.4s' }}>
+                <div className="bg-card p-6 rounded-lg shadow-md flex items-center">
                     <div className={`mr-4 p-3 rounded-full bg-gradient-to-tr from-slate-700 to-slate-900`}>
                         <RankIcon className={`h-6 w-6 ${rank.color}`} />
                     </div>
@@ -1147,7 +1096,7 @@ function Dashboard({ stats, formatCurrency, placeNewOrder, userData, navigateTo,
                         <p className={`text-2xl font-bold ${rank.color}`}>{rank.name}</p>
                     </div>
                 </div>
-                <div className="bg-card p-6 rounded-lg shadow-md flex items-center animate-fade-in-up" style={{ animationDelay: '0.6s' }}>
+                <div className="bg-card p-6 rounded-lg shadow-md flex items-center">
                     <div className={`mr-4 p-3 rounded-full bg-primary`}>
                         <Globe className="h-6 w-6 text-white" />
                     </div>
@@ -1170,7 +1119,7 @@ function Dashboard({ stats, formatCurrency, placeNewOrder, userData, navigateTo,
     );
 }
 
-const StatCard = ({ icon: Icon, title, value, color }) => (<div className="bg-card p-6 rounded-lg shadow-md flex items-center animate-fade-in-up"><div className={`mr-4 p-3 rounded-full ${color}`}><Icon className="h-6 w-6 text-white" /></div><div><p className="text-sm text-text-secondary">{title}</p><p className="text-2xl font-bold text-text-primary">{value}</p></div></div>);
+const StatCard = ({ icon: Icon, title, value, color }) => (<div className="bg-card p-6 rounded-lg shadow-md flex items-center"><div className={`mr-4 p-3 rounded-full ${color}`}><Icon className="h-6 w-6 text-white" /></div><div><p className="text-sm text-text-secondary">{title}</p><p className="text-2xl font-bold text-text-primary">{value}</p></div></div>);
 
 
 function QuickOrderBox({ userBalance, onSubmit, formatCurrency, navigateTo, showAlert }) {
@@ -1271,7 +1220,7 @@ function QuickOrderBox({ userBalance, onSubmit, formatCurrency, navigateTo, show
     };
 
     return (
-        <div className="bg-card p-6 rounded-lg shadow-lg relative overflow-hidden animate-fade-in-up" style={{ animationDelay: '0.8s' }}>
+        <div className="bg-card p-6 rounded-lg shadow-lg relative overflow-hidden">
             <div className="absolute top-0 right-0 -mt-10 -mr-10 w-40 h-40 bg-primary/10 rounded-full"></div>
             <div className="absolute bottom-0 left-0 -mb-12 -ml-12 w-40 h-40 bg-pink-500/10 rounded-full"></div>
             <h3 className="text-xl font-bold text-text-primary mb-4 flex items-center gap-2"><Rocket className="text-primary" /> Quick Order</h3>
@@ -1303,7 +1252,7 @@ function QuickOrderBox({ userBalance, onSubmit, formatCurrency, navigateTo, show
                     </div>
                 </div>
                 {selectedService && (
-                    <div className="space-y-4 animate-fade-in">
+                    <div className="space-y-4">
                         <div>
                             <label htmlFor="link" className="block text-sm font-medium text-text-secondary mb-1">Link</label>
                             <input type="text" id="link" value={link} onChange={(e) => setLink(e.target.value)} className="w-full p-2 border border-border-color rounded-lg focus:ring-2 focus:ring-primary transition bg-input" placeholder="e.g., https://instagram.com/yourprofile" required />
@@ -1386,7 +1335,7 @@ function OrdersHistory({ orders, formatCurrency }) {
     return (
         <div className="bg-card p-4 sm:p-6 rounded-lg shadow-md">
             <h2 className="text-xl font-bold text-text-primary mb-4">Your Order History</h2>
-            <div className="overflow-x-auto"><table className="w-full text-sm text-left"><thead className="bg-background-alt text-text-secondary uppercase text-xs"><tr><th className="p-3">Order ID</th><th className="p-3 w-1/3">Service</th><th className="p-3">Link</th><th className="p-3">Quantity</th><th className="p-3">Charge</th><th className="p-3">Date</th><th className="p-3 text-center">Status</th></tr></thead><tbody className="divide-y divide-border-color">{orders.map(order => (<tr key={order.id}><td className="p-3 font-mono text-text-primary">{order.orderId}</td><td className="p-3 text-text-primary font-medium">{order.serviceName}</td><td className="p-3 text-primary truncate max-w-xs hover:underline"><a href={order.link} target="_blank" rel="noopener noreferrer">{order.link}</a></td><td className="p-3 text-text-secondary">{(order.quantity || 0).toLocaleString()}</td><td className="p-3 text-text-secondary">{formatCurrency(order.charge)}</td><td className="p-3 text-text-secondary">{order.date}</td><td className="p-3 text-center"><StatusBadge status={order.status} /></td></tr>))}</tbody></table>{orders.length === 0 && <div className="text-center py-10"><p className="text-text-secondary">You haven't placed any orders yet.</p></div>}</div>
+            <div className="overflow-x-auto"><table className="w-full text-sm text-left"><thead className="bg-background-alt text-text-secondary uppercase text-xs"><tr><th className="p-3">Order ID</th><th className="p-3 w-1/3">Service</th><th className="p-3">Link</th><th className="p-3">Quantity</th><th className="p-3">Charge</th><th className="p-3">Date</th><th className="p-3 text-center">Status</th></tr></thead><tbody className="divide-y divide-border-color">{orders.map(order => (<tr key={order.id}><td className="p-3 font-mono text-text-primary">{order.orderId}</td><td className="p-3 text-text-primary font-medium">{order.serviceName}</td><td className="p-3 text-primary truncate max-w-xs hover:underline"><a href={order.link} target="_blank" rel="noopener noreferrer">{order.link}</a></td><td className="p-3 text-text-secondary">{(order.quantity || 0).toLocaleString()}</td><td className="p-3 text-text-secondary">{formatCurrency(order.charge)}</td><td className="p-3 text-text-secondary">{order.createdAt?.toDate().toLocaleDateString()}</td><td className="p-3 text-center"><StatusBadge status={order.status} /></td></tr>))}</tbody></table>{orders.length === 0 && <div className="text-center py-10"><p className="text-text-secondary">You haven't placed any orders yet.</p></div>}</div>
         </div>
     );
 }
@@ -1936,7 +1885,7 @@ function RanksPage({ totalSpent, formatCurrency, user, userData, showAlert }) {
     }
 
     return (
-        <div className="space-y-8 animate-fade-in">
+        <div className="space-y-8">
             <div>
                 <h2 className="text-3xl font-bold text-text-primary flex items-center gap-2">
                     <Trophy className="text-primary" /> Ranks & Rewards
@@ -2378,3 +2327,4 @@ function ConfirmationModal({ message, onConfirm, onCancel }) {
         </div>
     );
 }
+
