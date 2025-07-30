@@ -5,7 +5,7 @@ const admin = require('firebase-admin');
 const axios = require('axios');
 
 // --- Firebase Admin Initialization ---
-// This block is critical. It checks for environment variables and initializes Firebase Admin.
+let db;
 try {
   if (!admin.apps.length) {
     const privateKey = (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
@@ -20,19 +20,17 @@ try {
       }),
     });
   }
+  db = admin.firestore();
 } catch (error) {
   console.error('CRITICAL: Firebase Admin Initialization Error:', error.message);
 }
 
-const db = admin.firestore();
-
 exports.handler = async () => {
-  // Added a log to confirm the function is being triggered.
   console.log('Function update-order-status triggered by schedule.');
 
-  if (!admin.apps.length) {
-    console.error('Firebase Admin not initialized. Exiting function.');
-    return { statusCode: 500, body: JSON.stringify({ error: 'Backend not configured.' }) };
+  if (!db) {
+    console.error('Firebase Admin not initialized. Exiting function. This is likely due to missing environment variables.');
+    return { statusCode: 500, body: JSON.stringify({ error: 'Backend service is not configured correctly.' }) };
   }
 
   try {
@@ -119,7 +117,6 @@ exports.handler = async () => {
     return { statusCode: 500, body: JSON.stringify({ error: "An internal server error occurred." }) };
   }
 };
-```
 ```javascript
 // FILE: netlify/functions/place-order.js
 // PURPOSE: Securely places an order after validating user balance.
@@ -128,6 +125,7 @@ const admin = require('firebase-admin');
 const axios = require('axios');
 
 // --- Firebase Admin Initialization ---
+let db;
 try {
   if (!admin.apps.length) {
     const privateKey = (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
@@ -142,14 +140,14 @@ try {
       }),
     });
   }
+  db = admin.firestore();
 } catch (error) {
-  console.error('Firebase Admin Initialization Error:', error);
+  console.error('CRITICAL: Firebase Admin Initialization Error:', error.message);
 }
 
-const db = admin.firestore();
-
 exports.handler = async (event) => {
-  if (!admin.apps.length) {
+  if (!db) {
+    console.error('Firebase Admin not initialized. Exiting function.');
     return {
       statusCode: 500,
       body: JSON.stringify({ error: 'Backend is not configured correctly. Missing Firebase credentials.' }),
@@ -232,7 +230,6 @@ exports.handler = async (event) => {
     return { statusCode: 500, body: JSON.stringify({ error: error.message }) };
   }
 };
-```
 ```javascript
 // FILE: netlify/functions/refill-order.js
 // PURPOSE: Handles a user's request to refill a specific order.
@@ -241,6 +238,7 @@ const admin = require('firebase-admin');
 const axios = require('axios');
 
 // --- Firebase Admin Initialization ---
+let db;
 try {
   if (!admin.apps.length) {
     const privateKey = (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
@@ -255,14 +253,14 @@ try {
       }),
     });
   }
+  db = admin.firestore();
 } catch (error) {
-  console.error('Firebase Admin Initialization Error:', error);
+  console.error('CRITICAL: Firebase Admin Initialization Error:', error.message);
 }
 
-const db = admin.firestore();
-
 exports.handler = async (event) => {
-  if (!admin.apps.length) {
+  if (!db) {
+    console.error('Firebase Admin not initialized. Exiting function.');
     return { statusCode: 500, body: JSON.stringify({ error: 'Backend not configured.' }) };
   }
   
@@ -321,7 +319,6 @@ exports.handler = async (event) => {
     return { statusCode: 500, body: JSON.stringify({ error: error.message || 'Failed to process refill request.' }) };
   }
 };
-```
 ```javascript
 // FILE: netlify/functions/cancel-order.js
 // PURPOSE: Handles a user's request to cancel a specific order.
@@ -330,6 +327,7 @@ const admin = require('firebase-admin');
 const axios = require('axios');
 
 // --- Firebase Admin Initialization ---
+let db;
 try {
   if (!admin.apps.length) {
     const privateKey = (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
@@ -344,14 +342,14 @@ try {
       }),
     });
   }
+  db = admin.firestore();
 } catch (error) {
-  console.error('Firebase Admin Initialization Error:', error);
+  console.error('CRITICAL: Firebase Admin Initialization Error:', error.message);
 }
 
-const db = admin.firestore();
-
 exports.handler = async (event) => {
-  if (!admin.apps.length) {
+  if (!db) {
+    console.error('Firebase Admin not initialized. Exiting function.');
     return { statusCode: 500, body: JSON.stringify({ error: 'Backend not configured.' }) };
   }
   
