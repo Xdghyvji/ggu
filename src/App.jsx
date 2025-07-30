@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
     DollarSign, ShoppingCart, List, LogOut, ChevronDown, ChevronUp, User, Eye, EyeOff,
     Mail, Lock, X, CheckCircle, Clock, XCircle, RefreshCw, Wallet, Paperclip,
     AlertTriangle, Instagram, Facebook, Youtube, Twitter, MessageSquare, Music, Twitch, Linkedin,
-    LifeBuoy, Send, Settings, KeyRound, Copy, Check, TrendingUp, Users, ShieldCheck, Zap, Award, Star, Globe, History, Sparkles, Rocket, Gift, Trophy, CreditCard
+    LifeBuoy, Send, Settings, KeyRound, Copy, Check, TrendingUp, Users, ShieldCheck, Zap, Award, Star, Globe, History, Sparkles, Rocket, Gift, Trophy, CreditCard, Info, Bell, Circle, Filter, ArrowUpDown, Tag, Repeat
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import {
@@ -53,10 +53,18 @@ const firebaseConfig = {
 
 
 // --- Currency & Rate Constants ---
-const CURRENCY_SYMBOL = 'Rs';
+const BASE_CURRENCY = 'PKR';
 const MIN_WITHDRAWAL = 100;
 const COMMISSION_RATE = 0.05; // 5%
 const STALE_TRANSACTION_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
+
+// --- Pinned Currencies for easy access ---
+const PINNED_CURRENCIES = ['PKR', 'USD', 'EUR', 'GBP', 'AED'];
+const CURRENCY_SYMBOLS = {
+    'PKR': '₨', 'USD': '$', 'EUR': '€', 'GBP': '£', 'AED': 'د.إ',
+    // Add more symbols as needed
+};
+
 
 // --- Social Media Logo Mapping ---
 const SocialIcon = ({ category }) => {
@@ -200,7 +208,7 @@ const ParticleContainer = ({ effect }) => {
             case 'windy':
                 return <div key={i} className="absolute bg-gray-200 w-4 h-px animate-wind" style={style}></div>;
             default: // nightsky and default
-                return <div key={i} className="absolute bg-slate-400 rounded-full animate-twinkle" style={style}></div>;
+                return <div key={i} className="absolute bg-slate-400 rounded-full animate-twinkle" style={{...style, width: '2px', height: '2px'}}></div>;
         }
     }), [effect]);
 
@@ -209,7 +217,7 @@ const ParticleContainer = ({ effect }) => {
 
 
 // --- Main App Component ---
-export default function App() {
+function App() {
     const [user, setUser] = useState(null);
     const [userData, setUserData] = useState(null);
     const [orders, setOrders] = useState([]);
@@ -222,6 +230,14 @@ export default function App() {
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [theme, setTheme] = useState('default');
     const [pageTemplates, setPageTemplates] = useState({ landing: 'default', login: 'default' });
+    
+    // Currency State
+    const [currency, setCurrency] = useState(BASE_CURRENCY);
+    const [exchangeRates, setExchangeRates] = useState({ [BASE_CURRENCY]: 1 });
+
+    // Notification State
+    const [notifications, setNotifications] = useState([]);
+    const [unreadCount, setUnreadCount] = useState(0);
 
     const showAlert = (title, message) => {
         setAlertModal({ isOpen: true, title, message });
@@ -231,6 +247,23 @@ export default function App() {
     useEffect(() => {
         document.documentElement.className = `theme-${theme}`;
     }, [theme]);
+
+    // --- Currency Converter ---
+    useEffect(() => {
+        const fetchRates = async () => {
+            try {
+                // Using a free, public API for exchange rates. Replace with a more reliable one for production.
+                const response = await fetch(`https://api.exchangerate-api.com/v4/latest/${BASE_CURRENCY}`);
+                const data = await response.json();
+                if (data.rates) {
+                    setExchangeRates(data.rates);
+                }
+            } catch (error) {
+                console.error("Could not fetch exchange rates:", error);
+            }
+        };
+        fetchRates();
+    }, []);
 
     useEffect(() => {
         const settingsRef = doc(db, "settings", "theme");
@@ -300,11 +333,11 @@ export default function App() {
         };
     }, []);
 
-    // --- Firestore Orders Listener ---
+    // --- Firestore Orders & Notifications Listener ---
     useEffect(() => {
         if (user) {
-            const q = query(collection(db, "users", user.uid, "orders"), orderBy("createdAt", "desc"));
-            const unsubscribe = onSnapshot(q, (querySnapshot) => {
+            const ordersQuery = query(collection(db, "users", user.uid, "orders"), orderBy("createdAt", "desc"));
+            const unsubscribeOrders = onSnapshot(ordersQuery, (querySnapshot) => {
                 const ordersData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 setOrders(ordersData);
 
@@ -320,15 +353,39 @@ export default function App() {
             }, (error) => {
                 console.error("Error fetching orders:", error);
             });
-            return () => unsubscribe();
+
+            const notificationsQuery = query(collection(db, "users", user.uid, "notifications"), orderBy("createdAt", "desc"), limit(20));
+            const unsubscribeNotifications = onSnapshot(notificationsQuery, (snapshot) => {
+                const notifsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                setNotifications(notifsData);
+                const unread = notifsData.filter(n => !n.read).length;
+                setUnreadCount(unread);
+            });
+
+            return () => {
+                unsubscribeOrders();
+                unsubscribeNotifications();
+            };
         }
     }, [user, userData]);
 
     // --- Helper Functions ---
-    const formatCurrency = (amount) => {
-        if (amount === undefined || amount === null) return `${CURRENCY_SYMBOL}0.00`;
-        return `${CURRENCY_SYMBOL}${(amount).toFixed(2)}`;
-    };
+    const formatCurrency = useMemo(() => (amount) => {
+        const rate = exchangeRates[currency] || 1;
+        const convertedAmount = amount * rate;
+        
+        try {
+            return new Intl.NumberFormat(undefined, {
+                style: 'currency',
+                currency: currency,
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+            }).format(convertedAmount);
+        } catch (e) {
+            // Fallback for unsupported currencies
+            return `${currency} ${convertedAmount.toFixed(2)}`;
+        }
+    }, [currency, exchangeRates]);
 
     const navigateTo = (pageName) => {
         setPage(pageName);
@@ -352,6 +409,8 @@ export default function App() {
                 ...order,
                 orderId: `ORD-${Date.now()}`,
                 status: 'Pending',
+                start_count: null, // Initialize with null
+                remains: null,
                 date: new Date().toISOString().split('T')[0],
                 createdAt: Timestamp.now()
             });
@@ -400,11 +459,11 @@ export default function App() {
         }
 
         const PageContent = () => {
-            const props = { formatCurrency, user, userData, navigateTo, placeNewOrder, showAlert };
+            const props = { formatCurrency, user, userData, navigateTo, placeNewOrder, showAlert, currency, exchangeRates, orders };
             switch (page) {
                 case 'dashboard': return <Dashboard {...props} stats={{ balance: userData.balance, totalSpent: userData.totalSpent }} />;
                 case 'services': return <ServicesList {...props} onOrderSelect={handleSelectService} />;
-                case 'orders': return <OrdersHistory {...props} orders={orders} />;
+                case 'orders': return <OrdersHistory {...props} />;
                 case 'newOrder': return <NewOrderPage {...props} service={selectedService} userBalance={userData.balance} onSubmit={placeNewOrder} onBack={() => navigateTo('services')} />;
                 case 'addFunds': return <AddFundsPage {...props} />;
                 case 'transactions': return <TransactionsPage {...props} />;
@@ -421,7 +480,18 @@ export default function App() {
             <div className="flex min-h-screen bg-background text-text-primary">
                 <Sidebar navigateTo={navigateTo} currentPage={page} isMobileMenuOpen={isMobileMenuOpen} setIsMobileMenuOpen={setIsMobileMenuOpen} onLogout={handleLogout} />
                 <div className="flex-1 flex flex-col lg:ml-64">
-                    <Header user={userData} onMenuClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} formatCurrency={formatCurrency} navigateTo={navigateTo} />
+                    <Header 
+                        user={userData} 
+                        onMenuClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} 
+                        formatCurrency={formatCurrency} 
+                        navigateTo={navigateTo}
+                        currency={currency}
+                        setCurrency={setCurrency}
+                        exchangeRates={exchangeRates}
+                        notifications={notifications}
+                        unreadCount={unreadCount}
+                        userId={user.uid}
+                    />
                     <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto"><PageContent /></main>
                     <FloatingWhatsAppButton />
                 </div>
@@ -448,6 +518,7 @@ export default function App() {
 }
 
 // --- Landing Page ---
+// ... (LandingPage and other static components remain unchanged)
 function LandingPage({ setView, template }) {
     // This is a self-contained component for the landing page header
     const LandingHeader = () => (
@@ -508,7 +579,7 @@ function LandingPage({ setView, template }) {
                              <button onClick={() => setView('auth')} className="bg-blue-700 text-white font-bold py-3 px-6 rounded-md hover:bg-blue-800 transition">
                                  Login or Sign Up
                              </button>
-                        </div>
+                         </div>
                     </div>
                 </div>
             );
@@ -529,6 +600,7 @@ function LandingPage({ setView, template }) {
 
 
 // --- Content Pages ---
+// ... (Static pages remain unchanged)
 function StaticPage({ title, children, setView }) {
     return (
         <div className="min-h-screen bg-slate-100">
@@ -689,8 +761,6 @@ function LoginPage({ setView, showAlert, template }) {
 }
 
 // --- Layout Components ---
-// ... (All other components from the original file remain the same)
-// --- Layout Components ---
 function Sidebar({ navigateTo, currentPage, isMobileMenuOpen, setIsMobileMenuOpen, onLogout }) {
     const navItems = [
         { id: 'dashboard', label: 'Dashboard', icon: User },
@@ -723,18 +793,96 @@ function Sidebar({ navigateTo, currentPage, isMobileMenuOpen, setIsMobileMenuOpe
     );
 }
 
-function Header({ user, onMenuClick, formatCurrency, navigateTo }) {
+function Header({ user, onMenuClick, formatCurrency, navigateTo, currency, setCurrency, exchangeRates, notifications, unreadCount, userId }) {
+    const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+    const notificationsRef = useRef(null);
+
+    const handleBellClick = () => {
+        setIsNotificationsOpen(!isNotificationsOpen);
+        if (!isNotificationsOpen && unreadCount > 0) {
+            // Mark all as read
+            const batch = writeBatch(db);
+            notifications.forEach(notif => {
+                if (!notif.read) {
+                    const notifRef = doc(db, `users/${userId}/notifications`, notif.id);
+                    batch.update(notifRef, { read: true });
+                }
+            });
+            batch.commit().catch(err => console.error("Error marking notifications as read:", err));
+        }
+    };
+
+    useEffect(() => {
+        function handleClickOutside(event) {
+            if (notificationsRef.current && !notificationsRef.current.contains(event.target)) {
+                setIsNotificationsOpen(false);
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, [notificationsRef]);
+    
+    const sortedCurrencies = useMemo(() => {
+        const allCurrencies = Object.keys(exchangeRates);
+        const pinned = PINNED_CURRENCIES.filter(c => allCurrencies.includes(c));
+        const rest = allCurrencies.filter(c => !PINNED_CURRENCIES.includes(c)).sort();
+        return [...pinned, ...rest];
+    }, [exchangeRates]);
+
     return (
-        <header className="bg-card p-4 flex justify-between items-center lg:justify-end border-b border-border-color shadow-sm">
+        <header className="bg-card p-4 flex justify-between items-center lg:justify-end border-b border-border-color shadow-sm sticky top-0 z-20">
             <button onClick={onMenuClick} className="lg:hidden text-text-secondary hover:text-primary"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16m-7 6h7"></path></svg></button>
             <div className="flex items-center space-x-2 sm:space-x-4">
                 <div className="flex items-center text-sm font-semibold text-green-600 bg-green-100 px-3 py-1.5 rounded-full">
                     <span>{formatCurrency(user?.balance)}</span>
                 </div>
+                <select 
+                    value={currency} 
+                    onChange={(e) => setCurrency(e.target.value)}
+                    className="bg-input border border-border-color rounded-full px-3 py-1.5 text-sm text-text-secondary focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                    {sortedCurrencies.map(curr => (
+                        <option key={curr} value={curr}>
+                            {curr} {CURRENCY_SYMBOLS[curr] && `- ${CURRENCY_SYMBOLS[curr]}`}
+                        </option>
+                    ))}
+                </select>
                 <button onClick={() => navigateTo('addFunds')} className="hidden sm:flex items-center text-sm font-semibold text-white bg-primary hover:opacity-80 px-3 py-1.5 rounded-full transition">
-                    <span className="mr-2">{CURRENCY_SYMBOL}</span>
+                    <span className="mr-2">{CURRENCY_SYMBOLS[currency] || currency}</span>
                     <span>Add Funds</span>
                 </button>
+                
+                {/* Notifications Bell */}
+                <div className="relative" ref={notificationsRef}>
+                    <button onClick={handleBellClick} className="text-text-secondary hover:text-primary p-2 rounded-full relative">
+                        <Bell />
+                        {unreadCount > 0 && (
+                            <span className="absolute top-0 right-0 block h-2.5 w-2.5 transform -translate-y-1/2 translate-x-1/2 rounded-full bg-red-500 ring-2 ring-white"></span>
+                        )}
+                    </button>
+                    {isNotificationsOpen && (
+                        <div className="absolute right-0 mt-2 w-80 bg-card rounded-lg shadow-xl border border-border-color overflow-hidden z-30">
+                            <div className="p-3 font-semibold text-text-primary border-b border-border-color">Notifications</div>
+                            <div className="max-h-96 overflow-y-auto">
+                                {notifications.length > 0 ? notifications.map(notif => (
+                                    <div key={notif.id} className={`p-3 border-b border-border-color last:border-b-0 ${!notif.read ? 'bg-primary/5' : ''}`}>
+                                        <div className="flex items-start gap-3">
+                                            <div className={`mt-1.5 h-2 w-2 rounded-full ${!notif.read ? 'bg-primary' : 'bg-transparent'}`}></div>
+                                            <div className="flex-1">
+                                                <p className="text-sm text-text-primary font-medium">{notif.title}</p>
+                                                <p className="text-xs text-text-secondary">{notif.message}</p>
+                                                <p className="text-xs text-gray-400 mt-1">{notif.createdAt?.toDate().toLocaleString()}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )) : (
+                                    <p className="p-4 text-center text-sm text-text-secondary">No new notifications.</p>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+
                 <div className="flex items-center space-x-2">
                     {user?.photoURL ? (
                         <img src={user.photoURL} alt="User" className="w-10 h-10 rounded-full object-cover" />
@@ -842,7 +990,7 @@ function AutomatedPaymentGateway({ user, showAlert }) {
             <form onSubmit={handlePaymentSubmit} className="mt-6 space-y-4">
                 <div>
                     <label htmlFor="amount" className="block text-sm font-medium text-text-primary mb-1">
-                        Amount ({CURRENCY_SYMBOL})
+                        Amount ({BASE_CURRENCY})
                     </label>
                     <div className="relative">
                         <input
@@ -1045,7 +1193,7 @@ function PaymentModal({ user, method, onClose, onSubmit }) {
                         <p>Funds will be processed within 24 hours. If your balance is not updated after this time, please contact our support team.</p>
                     </div>
                     <form onSubmit={handleSubmit} className="space-y-4">
-                        <div><label className="block text-sm font-medium text-text-primary mb-1">Amount ({CURRENCY_SYMBOL})</label><input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full p-2 border border-border-color rounded-lg bg-input" placeholder="e.g., 1000" required /></div>
+                        <div><label className="block text-sm font-medium text-text-primary mb-1">Amount ({BASE_CURRENCY})</label><input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full p-2 border border-border-color rounded-lg bg-input" placeholder="e.g., 1000" required /></div>
                         <div><label className="block text-sm font-medium text-text-primary mb-1">Transaction ID (TID/TRX ID)</label><input type="text" value={trxId} onChange={(e) => setTrxId(e.target.value)} className="w-full p-2 border border-border-color rounded-lg bg-input" placeholder="Enter the ID from your receipt" required /></div>
                         <div>
                             <label className="block text-sm font-medium text-text-primary mb-1">Payment Receipt (Optional)</label>
@@ -1063,7 +1211,7 @@ function PaymentModal({ user, method, onClose, onSubmit }) {
 
 // --- Page Components ---
 
-function Dashboard({ stats, formatCurrency, placeNewOrder, userData, navigateTo, showAlert }) {
+function Dashboard({ stats, formatCurrency, placeNewOrder, userData, navigateTo, showAlert, currency, exchangeRates, orders }) {
 
     const getRank = (spent) => {
         if (spent > 50000) return { name: 'Platinum', color: 'text-cyan-400', icon: Award };
@@ -1113,6 +1261,9 @@ function Dashboard({ stats, formatCurrency, placeNewOrder, userData, navigateTo,
                 formatCurrency={formatCurrency}
                 navigateTo={navigateTo}
                 showAlert={showAlert}
+                currency={currency}
+                exchangeRates={exchangeRates}
+                orders={orders}
             />
 
         </div>
@@ -1122,7 +1273,8 @@ function Dashboard({ stats, formatCurrency, placeNewOrder, userData, navigateTo,
 const StatCard = ({ icon: Icon, title, value, color }) => (<div className="bg-card p-6 rounded-lg shadow-md flex items-center"><div className={`mr-4 p-3 rounded-full ${color}`}><Icon className="h-6 w-6 text-white" /></div><div><p className="text-sm text-text-secondary">{title}</p><p className="text-2xl font-bold text-text-primary">{value}</p></div></div>);
 
 
-function QuickOrderBox({ userBalance, onSubmit, formatCurrency, navigateTo, showAlert }) {
+function QuickOrderBox({ userBalance, onSubmit, formatCurrency, navigateTo, showAlert, currency, exchangeRates, orders }) {
+    const [activeTab, setActiveTab] = useState('new');
     const [categories, setCategories] = useState([]);
     const [services, setServices] = useState([]);
     const [selectedCategory, setSelectedCategory] = useState('');
@@ -1134,13 +1286,15 @@ function QuickOrderBox({ userBalance, onSubmit, formatCurrency, navigateTo, show
     const [loading, setLoading] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [success, setSuccess] = useState(false);
+    const [reorderData, setReorderData] = useState(null);
+
+    const recentOrders = useMemo(() => orders.slice(0, 5), [orders]);
 
     useEffect(() => {
         setLoading(true);
-        const q = query(collection(db, "categories"));
-        const unsubscribe = onSnapshot(q, async (categorySnapshot) => {
+        const q = query(collection(db, "categories"), orderBy("name"));
+        const unsubscribe = onSnapshot(q, (categorySnapshot) => {
             const categoriesData = categorySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            categoriesData.sort((a, b) => a.name.localeCompare(b.name));
             setCategories(categoriesData);
             setLoading(false);
         });
@@ -1150,20 +1304,28 @@ function QuickOrderBox({ userBalance, onSubmit, formatCurrency, navigateTo, show
     useEffect(() => {
         if (!selectedCategory) {
             setServices([]);
-            setSelectedService(null);
             return;
         }
         setLoading(true);
-        const servicesQuery = query(collection(db, `categories/${selectedCategory}/services`));
+        const servicesQuery = query(collection(db, `categories/${selectedCategory}/services`), orderBy("name"));
         const unsubscribe = onSnapshot(servicesQuery, (servicesSnapshot) => {
             const servicesData = servicesSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-            servicesData.sort((a, b) => a.name.localeCompare(b.name));
             setServices(servicesData);
-            setSelectedService(null);
             setLoading(false);
+            
+            // If reorder data is pending, set the service now
+            if (reorderData) {
+                const serviceToSelect = servicesData.find(s => s.id_api === reorderData.serviceId);
+                if (serviceToSelect) {
+                    setSelectedService(serviceToSelect);
+                    setLink(reorderData.link);
+                    setQuantity(reorderData.quantity);
+                    setReorderData(null); // Clear reorder data
+                }
+            }
         });
         return () => unsubscribe();
-    }, [selectedCategory]);
+    }, [selectedCategory, reorderData]);
 
     useEffect(() => {
         if (selectedService && quantity) {
@@ -1185,6 +1347,16 @@ function QuickOrderBox({ userBalance, onSubmit, formatCurrency, navigateTo, show
             setQuantity(service.min);
         }
     };
+    
+    const handleReorder = (order) => {
+        if (!order.categoryId || !order.serviceId) {
+            showAlert("Re-order Error", "This order is missing some information and cannot be re-ordered automatically.");
+            return;
+        }
+        setReorderData(order); // Set the data to trigger service loading
+        setSelectedCategory(order.categoryId); // This triggers the useEffect for services
+        setActiveTab('new'); // Switch back to the new order tab
+    };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -1203,6 +1375,7 @@ function QuickOrderBox({ userBalance, onSubmit, formatCurrency, navigateTo, show
         setIsSubmitting(true);
         try {
             await onSubmit({
+                categoryId: selectedCategory, // Pass categoryId for re-ordering
                 serviceId: selectedService.id_api,
                 serviceName: selectedService.name,
                 link,
@@ -1223,85 +1396,111 @@ function QuickOrderBox({ userBalance, onSubmit, formatCurrency, navigateTo, show
         <div className="bg-card p-6 rounded-lg shadow-lg relative overflow-hidden">
             <div className="absolute top-0 right-0 -mt-10 -mr-10 w-40 h-40 bg-primary/10 rounded-full"></div>
             <div className="absolute bottom-0 left-0 -mb-12 -ml-12 w-40 h-40 bg-pink-500/10 rounded-full"></div>
-            <h3 className="text-xl font-bold text-text-primary mb-4 flex items-center gap-2"><Rocket className="text-primary" /> Quick Order</h3>
-            <form onSubmit={handleSubmit} className="space-y-4 z-10 relative">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label className="block text-sm font-medium text-text-secondary mb-1">Category</label>
-                        <select
-                            value={selectedCategory}
-                            onChange={(e) => setSelectedCategory(e.target.value)}
-                            className="w-full p-2 border border-border-color rounded-lg bg-input"
-                            disabled={loading}
-                        >
-                            <option value="">{loading ? 'Loading...' : 'Select Category'}</option>
-                            {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-text-secondary mb-1">Service</label>
-                        <select
-                            value={selectedService?.id || ''}
-                            onChange={(e) => handleServiceChange(e.target.value)}
-                            className="w-full p-2 border border-border-color rounded-lg bg-input"
-                            disabled={!selectedCategory || loading}
-                        >
-                            <option value="">{loading ? 'Loading...' : 'Select Service'}</option>
-                            {services.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                        </select>
-                    </div>
-                </div>
-                {selectedService && (
-                    <div className="space-y-4">
+            
+            <div className="border-b border-border-color mb-4">
+                <nav className="-mb-px flex space-x-6">
+                    <button onClick={() => setActiveTab('new')} className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'new' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary'}`}>
+                        <Rocket className="inline-block h-5 w-5 mr-2" /> New Order
+                    </button>
+                    <button onClick={() => setActiveTab('recent')} className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'recent' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary'}`}>
+                        <History className="inline-block h-5 w-5 mr-2" /> Recent Orders
+                    </button>
+                </nav>
+            </div>
+            
+            {activeTab === 'new' && (
+                <form onSubmit={handleSubmit} className="space-y-4 z-10 relative">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <label htmlFor="link" className="block text-sm font-medium text-text-secondary mb-1">Link</label>
-                            <input type="text" id="link" value={link} onChange={(e) => setLink(e.target.value)} className="w-full p-2 border border-border-color rounded-lg focus:ring-2 focus:ring-primary transition bg-input" placeholder="e.g., https://instagram.com/yourprofile" required />
+                            <label className="block text-sm font-medium text-text-secondary mb-1">Category</label>
+                            <select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)} className="w-full p-2 border border-border-color rounded-lg bg-input" disabled={loading}>
+                                <option value="">{loading ? 'Loading...' : 'Select Category'}</option>
+                                {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+                            </select>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label htmlFor="quantity" className="block text-sm font-medium text-text-secondary mb-1">Quantity</label>
-                                <input type="number" id="quantity" value={quantity} onChange={(e) => setQuantity(e.target.value)} className="w-full p-2 border border-border-color rounded-lg focus:ring-2 focus:ring-primary transition bg-input" placeholder={`Min: ${selectedService.min}, Max: ${selectedService.max}`} required />
-                                <p className="text-xs text-text-secondary mt-1">Min: ${selectedService.min} / Max: ${selectedService.max}</p>
-                            </div>
-                            <div className="bg-background-alt text-text-primary p-2 rounded-lg text-center flex flex-col justify-center">
-                                <p className="text-sm font-medium">Total Charge</p>
-                                <p className="text-2xl font-bold">{formatCurrency(charge)}</p>
-                            </div>
+                        <div>
+                            <label className="block text-sm font-medium text-text-secondary mb-1">Service</label>
+                            <select value={selectedService?.id || ''} onChange={(e) => handleServiceChange(e.target.value)} className="w-full p-2 border border-border-color rounded-lg bg-input" disabled={!selectedCategory || loading}>
+                                <option value="">{loading ? 'Loading...' : 'Select Service'}</option>
+                                {services.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                            </select>
                         </div>
                     </div>
-                )}
-                {error && <p className="text-red-500 text-sm bg-red-50 p-3 rounded-lg">{error}</p>}
-                {success && <p className="text-green-600 text-sm bg-green-50 p-3 rounded-lg flex items-center gap-2"><CheckCircle /> Order placed successfully! Redirecting...</p>}
-                <button type="submit" disabled={!selectedService || isSubmitting || success} className="w-full bg-primary text-white font-bold py-3 px-4 rounded-lg hover:bg-primary-hover transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:bg-slate-400 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-                    {isSubmitting ? <><RefreshCw className="animate-spin" /> Submitting...</> : <> <Send /> Submit Order </>}
-                </button>
-            </form>
+                    {selectedService && (
+                        <div className="space-y-4">
+                            <div>
+                                <label htmlFor="link" className="block text-sm font-medium text-text-secondary mb-1">Link</label>
+                                <input type="text" id="link" value={link} onChange={(e) => setLink(e.target.value)} className="w-full p-2 border border-border-color rounded-lg focus:ring-2 focus:ring-primary transition bg-input" placeholder="e.g., https://instagram.com/yourprofile" required />
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label htmlFor="quantity" className="block text-sm font-medium text-text-secondary mb-1">Quantity</label>
+                                    <input type="number" id="quantity" value={quantity} onChange={(e) => setQuantity(e.target.value)} className="w-full p-2 border border-border-color rounded-lg focus:ring-2 focus:ring-primary transition bg-input" placeholder={`Min: ${selectedService.min}, Max: ${selectedService.max}`} required />
+                                    <p className="text-xs text-text-secondary mt-1">Min: ${selectedService.min} / Max: ${selectedService.max}</p>
+                                </div>
+                                <div className="bg-background-alt text-text-primary p-2 rounded-lg text-center flex flex-col justify-center">
+                                    <p className="text-sm font-medium">Total Charge</p>
+                                    <p className="text-2xl font-bold">{formatCurrency(charge)}</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    {error && <p className="text-red-500 text-sm bg-red-50 p-3 rounded-lg">{error}</p>}
+                    {success && <p className="text-green-600 text-sm bg-green-50 p-3 rounded-lg flex items-center gap-2"><CheckCircle /> Order placed successfully! Redirecting...</p>}
+                    <button type="submit" disabled={!selectedService || isSubmitting || success} className="w-full bg-primary text-white font-bold py-3 px-4 rounded-lg hover:bg-primary-hover transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:bg-slate-400 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                        {isSubmitting ? <><RefreshCw className="animate-spin" /> Submitting...</> : <> <Send /> Submit Order </>}
+                    </button>
+                </form>
+            )}
+            
+            {activeTab === 'recent' && (
+                <div className="space-y-3">
+                    {recentOrders.length > 0 ? recentOrders.map(order => (
+                        <div key={order.id} className="flex items-center justify-between bg-background-alt p-3 rounded-lg">
+                            <div>
+                                <p className="font-medium text-text-primary text-sm">{order.serviceName}</p>
+                                <p className="text-xs text-text-secondary truncate max-w-xs">{order.link}</p>
+                            </div>
+                            <button onClick={() => handleReorder(order)} className="bg-primary text-white px-3 py-1.5 rounded-full hover:bg-primary-hover text-xs font-bold transition flex items-center gap-1">
+                                <Repeat size={14} /> Re-order
+                            </button>
+                        </div>
+                    )) : (
+                        <p className="text-center text-text-secondary py-4">You have no recent orders.</p>
+                    )}
+                </div>
+            )}
         </div>
     );
 }
 
 
-function ServicesList({ onOrderSelect, formatCurrency }) {
+function ServicesList({ onOrderSelect, formatCurrency, currency, exchangeRates }) {
     const [categories, setCategories] = useState([]);
     const [openCategory, setOpenCategory] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [loadingServices, setLoadingServices] = useState(true);
+    const [serviceDetails, setServiceDetails] = useState(null);
+    const [sortBy, setSortBy] = useState('default');
+    const [filterTags, setFilterTags] = useState([]);
+    
+    const allTags = useMemo(() => {
+        const tags = new Set();
+        categories.forEach(cat => cat.services.forEach(s => s.tags?.forEach(tag => tags.add(tag))));
+        return Array.from(tags).sort();
+    }, [categories]);
 
     useEffect(() => {
         setLoadingServices(true);
-        const q = query(collection(db, "categories"));
+        const q = query(collection(db, "categories"), orderBy("name"));
         const unsubscribe = onSnapshot(q, async (categorySnapshot) => {
             const categoriesData = [];
             for (const catDoc of categorySnapshot.docs) {
                 const servicesQuery = query(collection(db, `categories/${catDoc.id}/services`));
                 const servicesSnapshot = await getDocs(servicesQuery);
                 const services = servicesSnapshot.docs.map(sDoc => ({ ...sDoc.data(), id: sDoc.id }));
-                services.sort((a, b) => a.name.localeCompare(b.name));
                 categoriesData.push({ ...catDoc.data(), id: catDoc.id, services });
             }
-
-            categoriesData.sort((a, b) => a.name.localeCompare(b.name));
-
             setCategories(categoriesData);
             if (categoriesData.length > 0 && openCategory === null) {
                 setOpenCategory(categoriesData[0].id);
@@ -1313,11 +1512,42 @@ function ServicesList({ onOrderSelect, formatCurrency }) {
         });
         return () => unsubscribe();
     }, []);
+    
+    const handleTagFilterChange = (tag) => {
+        setFilterTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
+    };
 
-    const filteredCategories = useMemo(() => categories.map(cat => ({
-        ...cat,
-        services: cat.services.filter(s => (s.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || (s.id_api || '').toString().includes(searchTerm))
-    })).filter(cat => cat.services.length > 0), [categories, searchTerm]);
+    const filteredCategories = useMemo(() => {
+        return categories.map(cat => {
+            let services = cat.services;
+
+            // Search filter
+            if (searchTerm) {
+                services = services.filter(s =>
+                    (s.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    (s.id_api || '').toString().includes(searchTerm)
+                );
+            }
+            
+            // Tag filter
+            if (filterTags.length > 0) {
+                services = services.filter(s => 
+                    filterTags.every(tag => s.tags && s.tags.includes(tag))
+                );
+            }
+            
+            // Sorting
+            if (sortBy === 'rate-asc') {
+                services.sort((a, b) => a.rate - b.rate);
+            } else if (sortBy === 'rate-desc') {
+                services.sort((a, b) => b.rate - a.rate);
+            } else {
+                 services.sort((a, b) => a.name.localeCompare(b.name));
+            }
+
+            return { ...cat, services };
+        }).filter(cat => cat.services.length > 0);
+    }, [categories, searchTerm, sortBy, filterTags]);
 
     const toggleCategory = (categoryId) => setOpenCategory(openCategory === categoryId ? null : categoryId);
 
@@ -1325,8 +1555,44 @@ function ServicesList({ onOrderSelect, formatCurrency }) {
 
     return (
         <div className="space-y-6">
-            <div className="bg-card p-4 rounded-lg shadow-md"><h2 className="text-xl font-bold text-text-primary mb-2">Our Services</h2><p className="text-text-secondary mb-4">Select a service to place an order. We provide the best quality in the market.</p><input type="text" placeholder="Search services by name or ID..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full p-3 border border-border-color rounded-lg focus:ring-2 focus:ring-primary transition bg-input" /></div>
-            <div className="space-y-3">{filteredCategories.map(category => (<div key={category.id} className="bg-card rounded-lg shadow-md overflow-hidden"><button onClick={() => toggleCategory(category.id)} className="w-full flex justify-between items-center p-4 text-left bg-background-alt hover:bg-border-color"><h3 className="font-semibold text-text-primary flex items-center"><SocialIcon category={category.name} /> {category.name}</h3>{openCategory === category.id ? <ChevronUp className="h-5 w-5 text-text-secondary" /> : <ChevronDown className="h-5 w-5 text-text-secondary" />}</button>{openCategory === category.id && (<div className="overflow-x-auto"><table className="w-full text-sm"><thead className="text-text-secondary"><tr><th className="p-3 text-left">ID</th><th className="p-3 text-left w-1/2">Name</th><th className="p-3 text-left">Rate / 1000</th><th className="p-3 text-left">Min/Max</th><th className="p-3 text-right">Action</th></tr></thead><tbody className="divide-y divide-border-color">{category.services.map(service => (<tr key={service.id}><td className="p-3 text-text-secondary">{service.id_api}</td><td className="p-3 text-text-primary font-medium">{service.name}</td><td className="p-3 text-green-600 font-semibold">{formatCurrency(service.rate)}</td><td className="p-3 text-text-secondary">{service.min} / {service.max}</td><td className="p-3 text-right"><button onClick={() => onOrderSelect(service)} className="bg-primary text-white px-4 py-1.5 rounded-full hover:bg-primary-hover text-xs font-bold transition">Order</button></td></tr>))}</tbody></table></div>)}</div>))}{filteredCategories.length === 0 && <div className="text-center py-10 bg-card rounded-lg shadow-md"><p className="text-text-secondary">No services found.</p></div>}</div>
+            {serviceDetails && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4" onClick={() => setServiceDetails(null)}>
+                    <div className="bg-card rounded-lg shadow-xl w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
+                        <h3 className="text-xl font-bold text-text-primary mb-2">{serviceDetails.name}</h3>
+                        <div className="flex flex-wrap gap-2 mb-4">
+                            {serviceDetails.tags?.map(tag => <ServiceTag key={tag} tagName={tag} />)}
+                        </div>
+                        <p className="text-text-secondary whitespace-pre-wrap">{serviceDetails.description || "No description available."}</p>
+                        <button onClick={() => setServiceDetails(null)} className="mt-6 w-full bg-primary text-white py-2 rounded-lg">Close</button>
+                    </div>
+                </div>
+            )}
+            <div className="bg-card p-4 rounded-lg shadow-md">
+                <h2 className="text-xl font-bold text-text-primary mb-2">Our Services</h2>
+                <p className="text-text-secondary mb-4">Select a service to place an order. We provide the best quality in the market.</p>
+                <input type="text" placeholder="Search services by name or ID..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full p-3 border border-border-color rounded-lg focus:ring-2 focus:ring-primary transition bg-input" />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                    <div>
+                        <label className="text-sm font-medium text-text-secondary flex items-center gap-2 mb-1"><ArrowUpDown size={16}/> Sort By</label>
+                        <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="w-full p-2 border border-border-color rounded-lg bg-input">
+                            <option value="default">Default</option>
+                            <option value="rate-asc">Price: Low to High</option>
+                            <option value="rate-desc">Price: High to Low</option>
+                        </select>
+                    </div>
+                    <div className="md:col-span-2">
+                        <label className="text-sm font-medium text-text-secondary flex items-center gap-2 mb-1"><Filter size={16}/> Filter by Tags</label>
+                        <div className="flex flex-wrap gap-2">
+                            {allTags.map(tag => (
+                                <button key={tag} onClick={() => handleTagFilterChange(tag)} className={`px-3 py-1 text-xs font-semibold rounded-full border transition-colors ${filterTags.includes(tag) ? 'bg-primary text-white border-primary' : 'bg-background text-text-secondary border-border-color'}`}>
+                                    {tag}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div className="space-y-3">{filteredCategories.map(category => (<div key={category.id} className="bg-card rounded-lg shadow-md overflow-hidden"><button onClick={() => toggleCategory(category.id)} className="w-full flex justify-between items-center p-4 text-left bg-background-alt hover:bg-border-color"><h3 className="font-semibold text-text-primary flex items-center"><SocialIcon category={category.name} /> {category.name}</h3>{openCategory === category.id ? <ChevronUp className="h-5 w-5 text-text-secondary" /> : <ChevronDown className="h-5 w-5 text-text-secondary" />}</button>{openCategory === category.id && (<div className="overflow-x-auto"><table className="w-full text-sm"><thead className="text-text-secondary"><tr><th className="p-3 text-left">ID</th><th className="p-3 text-left w-1/2">Name</th><th className="p-3 text-left">Rate / 1000</th><th className="p-3 text-left">Min/Max</th><th className="p-3 text-right">Action</th></tr></thead><tbody className="divide-y divide-border-color">{category.services.map(service => (<tr key={service.id}><td className="p-3 text-text-secondary">{service.id_api}</td><td className="p-3 text-text-primary font-medium"><div className="flex items-center gap-2">{service.name} <Info className="h-4 w-4 text-blue-400 cursor-pointer flex-shrink-0" onClick={(e) => {e.stopPropagation(); setServiceDetails(service);}} /></div><div className="flex flex-wrap gap-1 mt-1">{service.tags?.map(tag => <ServiceTag key={tag} tagName={tag} />)}</div></td><td className="p-3 text-green-600 font-semibold">{formatCurrency(service.rate)}</td><td className="p-3 text-text-secondary">{service.min} / {service.max}</td><td className="p-3 text-right"><button onClick={() => onOrderSelect(service)} className="bg-primary text-white px-4 py-1.5 rounded-full hover:bg-primary-hover text-xs font-bold transition">Order</button></td></tr>))}</tbody></table></div>)}</div>))}{filteredCategories.length === 0 && <div className="text-center py-10 bg-card rounded-lg shadow-md"><p className="text-text-secondary">No services found for your filters.</p></div>}</div>
         </div>
     );
 }
@@ -1335,12 +1601,13 @@ function OrdersHistory({ orders, formatCurrency }) {
     return (
         <div className="bg-card p-4 sm:p-6 rounded-lg shadow-md">
             <h2 className="text-xl font-bold text-text-primary mb-4">Your Order History</h2>
-            <div className="overflow-x-auto"><table className="w-full text-sm text-left"><thead className="bg-background-alt text-text-secondary uppercase text-xs"><tr><th className="p-3">Order ID</th><th className="p-3 w-1/3">Service</th><th className="p-3">Link</th><th className="p-3">Quantity</th><th className="p-3">Charge</th><th className="p-3">Date</th><th className="p-3 text-center">Status</th></tr></thead><tbody className="divide-y divide-border-color">{orders.map(order => (<tr key={order.id}><td className="p-3 font-mono text-text-primary">{order.orderId}</td><td className="p-3 text-text-primary font-medium">{order.serviceName}</td><td className="p-3 text-primary truncate max-w-xs hover:underline"><a href={order.link} target="_blank" rel="noopener noreferrer">{order.link}</a></td><td className="p-3 text-text-secondary">{(order.quantity || 0).toLocaleString()}</td><td className="p-3 text-text-secondary">{formatCurrency(order.charge)}</td><td className="p-3 text-text-secondary">{order.createdAt?.toDate().toLocaleDateString()}</td><td className="p-3 text-center"><StatusBadge status={order.status} /></td></tr>))}</tbody></table>{orders.length === 0 && <div className="text-center py-10"><p className="text-text-secondary">You haven't placed any orders yet.</p></div>}</div>
+            <div className="overflow-x-auto"><table className="w-full text-sm text-left"><thead className="bg-background-alt text-text-secondary uppercase text-xs"><tr><th className="p-3">Order ID</th><th className="p-3 w-1/3">Service</th><th className="p-3">Link</th><th className="p-3">Charge</th><th className="p-3">Start Count</th><th className="p-3">Remains</th><th className="p-3 text-center">Status</th></tr></thead><tbody className="divide-y divide-border-color">{orders.map(order => (<tr key={order.id}><td className="p-3 font-mono text-text-primary">{order.orderId}</td><td className="p-3 text-text-primary font-medium">{order.serviceName}</td><td className="p-3 text-primary truncate max-w-xs hover:underline"><a href={order.link} target="_blank" rel="noopener noreferrer">{order.link}</a></td><td className="p-3 text-text-secondary">{formatCurrency(order.charge)}</td><td className="p-3 text-text-secondary">{order.start_count || 'N/A'}</td><td className="p-3 text-text-secondary">{order.remains || 'N/A'}</td><td className="p-3 text-center"><StatusBadge status={order.status} /></td></tr>))}</tbody></table>{orders.length === 0 && <div className="text-center py-10"><p className="text-text-secondary">You haven't placed any orders yet.</p></div>}</div>
         </div>
     );
 }
 
 // --- NEW ORDER PAGE (FIX) ---
+// ... (Component remains largely the same, but now uses formatCurrency)
 function NewOrderPage({ service, userBalance, onSubmit, onBack, formatCurrency, showAlert }) {
     const [link, setLink] = useState('');
     const [quantity, setQuantity] = useState(service ? service.min : '');
@@ -1450,6 +1717,7 @@ function NewOrderPage({ service, userBalance, onSubmit, onBack, formatCurrency, 
 }
 
 // --- Support Page Component ---
+// ... (Component remains unchanged)
 function SupportPage({ user, showAlert }) {
     const [tickets, setTickets] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -2305,6 +2573,38 @@ const StatusBadge = ({ status }) => {
     return (<span className={`px-2.5 py-1 text-xs font-semibold rounded-full capitalize ${statusMap[status] || 'bg-gray-100 text-gray-800'}`}>{displayText}</span>);
 };
 
+// --- NEW Service Tag Component ---
+const ServiceTag = ({ tagName }) => {
+    const tagStyles = {
+        'High Quality': 'bg-amber-100 text-amber-800',
+        'Fast Start': 'bg-sky-100 text-sky-800',
+        'Drip-Feed Available': 'bg-blue-100 text-blue-800',
+        'Refill Guarantee': 'bg-green-100 text-green-800',
+        'Bot': 'bg-red-100 text-red-800',
+        'Real Users': 'bg-teal-100 text-teal-800',
+        'New': 'bg-purple-100 text-purple-800',
+        'Popular': 'bg-pink-100 text-pink-800',
+    };
+    const tagIcons = {
+        'High Quality': <Star size={12} />,
+        'Fast Start': <Rocket size={12} />,
+        'Drip-Feed Available': <Clock size={12} />,
+        'Refill Guarantee': <RefreshCw size={12} />,
+        'Bot': <Zap size={12} />,
+        'Real Users': <Users size={12} />,
+        'New': <Sparkles size={12} />,
+        'Popular': <TrendingUp size={12} />,
+    };
+
+    return (
+        <span className={`flex items-center gap-1.5 px-2 py-0.5 text-xs font-medium rounded-full ${tagStyles[tagName] || 'bg-gray-100 text-gray-800'}`}>
+            {tagIcons[tagName]}
+            {tagName}
+        </span>
+    );
+};
+
+
 // --- NEW Confirmation Modal ---
 function ConfirmationModal({ message, onConfirm, onCancel }) {
     return (
@@ -2327,4 +2627,4 @@ function ConfirmationModal({ message, onConfirm, onCancel }) {
         </div>
     );
 }
-
+export default App;
