@@ -42,13 +42,13 @@ import {
 // --- Firebase Configuration ---
 // IMPORTANT: In a real production app, use environment variables for this configuration.
 const firebaseConfig = {
-    apiKey: "AIzaSyBgjU9fzFsfx6-gv4p0WWH77_U5BPk69A0",
-    authDomain: "smmp-4b3cc.firebaseapp.com",
-    projectId: "smmp-4b3cc",
-    storageBucket: "smmp-4b3cc.firebasestorage.app",
-    messagingSenderId: "43467456148",
-    appId: "1:43467456148:web:368b011abf362791edfe81",
-    measurementId: "G-Y6HBHEL742"
+    // Your Firebase config details here
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_AUTH_DOMAIN",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_STORAGE_BUCKET",
+    messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+    appId: "YOUR_APP_ID",
 };
 
 
@@ -375,7 +375,6 @@ function App() {
 
     /**
      * Calls the backend Netlify function to place an order.
-     * This is the new, secure way to handle order creation.
      */
     const placeNewOrder = async (order) => {
         if (!user) {
@@ -385,7 +384,6 @@ function App() {
 
         try {
             const token = await user.getIdToken();
-            // FIX: Use the correct /api/ proxy path
             const response = await fetch('/api/place-order', {
                 method: 'POST',
                 headers: {
@@ -395,15 +393,17 @@ function App() {
                 body: JSON.stringify(order),
             });
 
-            const result = await response.json();
-
             if (!response.ok) {
-                // If the server returns an error, show it to the user.
-                throw new Error(result.error || 'An unknown error occurred.');
+                const errorText = await response.text();
+                try {
+                    const result = JSON.parse(errorText);
+                    throw new Error(result.error || 'An unknown error occurred.');
+                } catch (e) {
+                    throw new Error(errorText || 'An unknown server error occurred.');
+                }
             }
 
-            // The backend handled the order. The frontend's onSnapshot listener will automatically
-            // update the balance and order history. We just need to give feedback.
+            const result = await response.json();
             showAlert("Order Placed", "Your order has been successfully submitted and is now being processed.");
             navigateTo('orders');
             return Promise.resolve(result.message);
@@ -867,7 +867,6 @@ function AutomatedPaymentGateway({ user, showAlert }) {
         try {
             const token = await user.getIdToken();
             
-            // This points to your Netlify function for initiating payments.
             const functionUrl = '/api/initiate-payment';
             
             const response = await fetch(functionUrl, {
@@ -1523,25 +1522,35 @@ function ServicesList({ onOrderSelect, formatCurrency }) {
     );
 }
 
+// --- MODIFIED OrdersHistory Component ---
 function OrdersHistory({ user, orders, formatCurrency, showAlert }) {
     const [isRefreshing, setIsRefreshing] = useState(false);
+    const [actionLoading, setActionLoading] = useState(null); // To show loading on a specific button
+    const [searchTerm, setSearchTerm] = useState('');
 
     const handleRefresh = async () => {
         setIsRefreshing(true);
         try {
             const token = await user.getIdToken();
-            // FIX: Use the correct /api/ proxy path
             const response = await fetch('/api/update-order-status', {
-                method: 'POST', // Use POST for triggering actions
+                method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
                 },
             });
-            const result = await response.json();
+            
+            const responseText = await response.text();
             if (!response.ok) {
-                throw new Error(result.error || 'Failed to refresh statuses.');
+                try {
+                    const result = JSON.parse(responseText);
+                    throw new Error(result.error || 'Failed to refresh statuses.');
+                } catch (e) {
+                    throw new Error(responseText || 'An unknown server error occurred.');
+                }
             }
-            showAlert("Success", "Order statuses have been updated.");
+            
+            const result = JSON.parse(responseText);
+            showAlert("Success", result.message || "Order statuses are being updated.");
         } catch (error) {
             console.error("Error refreshing order statuses:", error);
             showAlert("Error", error.message);
@@ -1551,6 +1560,7 @@ function OrdersHistory({ user, orders, formatCurrency, showAlert }) {
     };
 
     const handleOrderAction = async (action, orderId) => {
+        setActionLoading(orderId);
         try {
             const token = await user.getIdToken();
             const response = await fetch(`/api/${action}-order`, {
@@ -1563,35 +1573,57 @@ function OrdersHistory({ user, orders, formatCurrency, showAlert }) {
             });
             const result = await response.json();
             if (!response.ok) {
-                throw new Error(result.error);
+                throw new Error(result.error || `Failed to ${action} order.`);
             }
             showAlert("Success", result.message);
         } catch (error) {
-            console.error(`Error processing ${action}:`, error);
+            console.error(`Error with ${action} action:`, error);
             showAlert("Error", error.message);
+        } finally {
+            setActionLoading(null);
         }
     };
 
+    const filteredOrders = useMemo(() => {
+        if (!searchTerm) return orders;
+        const lowercasedFilter = searchTerm.toLowerCase();
+        return orders.filter(order => {
+            return (
+                (order.providerOrderId && order.providerOrderId.toString().includes(lowercasedFilter)) ||
+                (order.serviceName && order.serviceName.toLowerCase().includes(lowercasedFilter)) ||
+                (order.link && order.link.toLowerCase().includes(lowercasedFilter))
+            );
+        });
+    }, [orders, searchTerm]);
+
     return (
         <div className="bg-card p-4 sm:p-6 rounded-lg shadow-md">
-            <div className="flex justify-between items-center mb-4">
+            <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-4">
                 <h2 className="text-xl font-bold text-text-primary">Your Order History</h2>
-                <button 
-                    onClick={handleRefresh} 
-                    disabled={isRefreshing}
-                    className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-primary text-white rounded-lg hover:bg-primary-hover disabled:bg-slate-400 transition-colors"
-                >
-                    <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-                    {isRefreshing ? 'Refreshing...' : 'Refresh Statuses'}
-                </button>
+                <div className="flex items-center gap-2 w-full md:w-auto">
+                    <input 
+                        type="text"
+                        placeholder="Search by ID, service, or link..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full md:w-64 p-2 border border-border-color rounded-lg bg-input"
+                    />
+                    <button 
+                        onClick={handleRefresh} 
+                        disabled={isRefreshing}
+                        className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-primary text-white rounded-lg hover:bg-primary-hover disabled:bg-slate-400 transition-colors"
+                    >
+                        <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                        {isRefreshing ? '...' : 'Refresh'}
+                    </button>
+                </div>
             </div>
             <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left">
+                <table className="w-full min-w-[1024px] text-sm text-left">
                     <thead className="bg-background-alt text-text-secondary uppercase text-xs">
                         <tr>
                             <th className="p-3">Order ID</th>
                             <th className="p-3 w-1/3">Service</th>
-                            <th className="p-3">Link</th>
                             <th className="p-3">Charge</th>
                             <th className="p-3">Start Count</th>
                             <th className="p-3">Remains</th>
@@ -1600,20 +1632,36 @@ function OrdersHistory({ user, orders, formatCurrency, showAlert }) {
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-border-color">
-                        {orders.map(order => (
+                        {filteredOrders.map(order => (
                             <tr key={order.id}>
-                                <td className="p-3 font-mono text-text-primary">{order.providerOrderId || order.orderId}</td>
-                                <td className="p-3 text-text-primary font-medium">{order.serviceName}</td>
-                                <td className="p-3 text-primary truncate max-w-xs hover:underline">
-                                    <a href={order.link} target="_blank" rel="noopener noreferrer">{order.link}</a>
+                                <td className="p-3 font-mono text-text-primary">{order.providerOrderId || order.id}</td>
+                                <td className="p-3 text-text-primary font-medium">
+                                    {order.serviceName}
+                                    <a href={order.link} target="_blank" rel="noopener noreferrer" className="block text-xs text-primary truncate max-w-xs hover:underline">{order.link}</a>
                                 </td>
                                 <td className="p-3 text-text-secondary">{formatCurrency(order.charge)}</td>
                                 <td className="p-3 text-text-secondary">{order.start_count ?? 'N/A'}</td>
-                                <td className="p-3 text-text-secondary">{order.remains ?? 'N/A'}</td>
+                                <td className="p-3 text-text-secondary">{order.status === 'Completed' ? 0 : (order.remains ?? 'N/A')}</td>
                                 <td className="p-3 text-center"><StatusBadge status={order.status} /></td>
                                 <td className="p-3 text-center space-x-2">
-                                    {order.providerAllowsRefill && <button onClick={() => handleOrderAction('refill', order.id)} className="text-xs bg-blue-500 text-white px-2 py-1 rounded">Refill</button>}
-                                    {order.providerAllowsCancel && <button onClick={() => handleOrderAction('cancel', order.id)} className="text-xs bg-red-500 text-white px-2 py-1 rounded">Cancel</button>}
+                                    {order.providerAllowsRefill && (
+                                        <button 
+                                            onClick={() => handleOrderAction('refill', order.id)}
+                                            disabled={actionLoading === order.id}
+                                            className="text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 disabled:bg-slate-400"
+                                        >
+                                            {actionLoading === order.id ? '...' : 'Refill'}
+                                        </button>
+                                    )}
+                                    {order.providerAllowsCancel && (
+                                        <button 
+                                            onClick={() => handleOrderAction('cancel', order.id)}
+                                            disabled={actionLoading === order.id}
+                                            className="text-xs bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600 disabled:bg-slate-400"
+                                        >
+                                            {actionLoading === order.id ? '...' : 'Cancel'}
+                                        </button>
+                                    )}
                                 </td>
                             </tr>
                         ))}
@@ -1624,12 +1672,17 @@ function OrdersHistory({ user, orders, formatCurrency, showAlert }) {
                         <p className="text-text-secondary">You haven't placed any orders yet.</p>
                     </div>
                 )}
+                 {orders.length > 0 && filteredOrders.length === 0 && (
+                    <div className="text-center py-10">
+                        <p className="text-text-secondary">No orders match your search.</p>
+                    </div>
+                )}
             </div>
         </div>
     );
 }
 
-function NewOrderPage({ serviceInfo, userBalance, onSubmit, onBack, formatCurrency, navigateTo }) {
+function NewOrderPage({ serviceInfo, userBalance, onSubmit, onBack, formatCurrency }) {
     const { service, categoryId } = serviceInfo || {};
     const [link, setLink] = useState('');
     const [quantity, setQuantity] = useState(service ? service.min : '');
