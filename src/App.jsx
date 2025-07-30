@@ -42,13 +42,13 @@ import {
 // --- Firebase Configuration ---
 // IMPORTANT: In a real production app, use environment variables for this configuration.
 const firebaseConfig = {
-    // Your Firebase config details here
-    apiKey: "YOUR_API_KEY",
-    authDomain: "YOUR_AUTH_DOMAIN",
-    projectId: "YOUR_PROJECT_ID",
-    storageBucket: "YOUR_STORAGE_BUCKET",
-    messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-    appId: "YOUR_APP_ID",
+    apiKey: "AIzaSyBgjU9fzFsfx6-gv4p0WWH77_U5BPk69A0",
+    authDomain: "smmp-4b3cc.firebaseapp.com",
+    projectId: "smmp-4b3cc",
+    storageBucket: "smmp-4b3cc.firebasestorage.app",
+    messagingSenderId: "43467456148",
+    appId: "1:43467456148:web:368b011abf362791edfe81",
+    measurementId: "G-Y6HBHEL742"
 };
 
 
