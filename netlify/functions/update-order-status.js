@@ -5,38 +5,48 @@ const admin = require('firebase-admin');
 const axios = require('axios');
 
 // --- Firebase Admin Initialization ---
-// Ensure you have set FIREBASE_PROJECT_ID, FIREBASE_PRIVATE_KEY, and FIREBASE_CLIENT_EMAIL in your Netlify environment variables
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      privateKey: (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-    }),
-  });
+// This block is critical. It checks for environment variables and initializes Firebase Admin.
+try {
+  if (!admin.apps.length) {
+    const privateKey = (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+    if (!process.env.FIREBASE_PROJECT_ID || !privateKey || !process.env.FIREBASE_CLIENT_EMAIL) {
+      throw new Error('Firebase environment variables are not set. Please check your Netlify site configuration.');
+    }
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        privateKey: privateKey,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      }),
+    });
+  }
+} catch (error) {
+  console.error('CRITICAL: Firebase Admin Initialization Error:', error.message);
 }
+
 const db = admin.firestore();
 
 exports.handler = async () => {
+  // Added a log to confirm the function is being triggered.
+  console.log('Function update-order-status triggered by schedule.');
+
+  if (!admin.apps.length) {
+    console.error('Firebase Admin not initialized. Exiting function.');
+    return { statusCode: 500, body: JSON.stringify({ error: 'Backend not configured.' }) };
+  }
+
   try {
-    // 1. Get all 'Pending' or 'Processing' orders from all users
     const ordersQuery = db.collectionGroup('orders').where('status', 'in', ['Pending', 'Processing']);
     const snapshot = await ordersQuery.get();
 
     if (snapshot.empty) {
-      console.log("No active orders to update.");
+      console.log("No active orders found to update.");
       return { statusCode: 200, body: JSON.stringify({ message: "No active orders to update." }) };
     }
 
-    // 2. Group orders by their provider to make batch requests
     const ordersByProvider = {};
     snapshot.forEach(doc => {
-      const order = {
-        docPath: doc.ref.path, // Store the full path to the document
-        ...doc.data()
-      };
-      
-      // Ensure the order has a providerId to be processed
+      const order = { docPath: doc.ref.path, ...doc.data() };
       if (order.providerId) {
         if (!ordersByProvider[order.providerId]) {
           ordersByProvider[order.providerId] = [];
@@ -45,23 +55,22 @@ exports.handler = async () => {
       }
     });
 
-    // 3. Fetch provider details from Firestore
     const providerIds = Object.keys(ordersByProvider);
     if (providerIds.length === 0) {
-        console.log("No orders with a valid providerId found.");
-        return { statusCode: 200, body: JSON.stringify({ message: "No orders with a valid providerId found." }) };
+      console.log("No orders with a valid providerId found.");
+      return { statusCode: 200, body: JSON.stringify({ message: "No orders with a valid providerId found." }) };
     }
+    
     const providersSnapshot = await db.collection('api_providers').where(admin.firestore.FieldPath.documentId(), 'in', providerIds).get();
     const providerMap = new Map(providersSnapshot.docs.map(doc => [doc.id, doc.data()]));
     
     const batch = db.batch();
     let updatesCount = 0;
 
-    // 4. Iterate through each provider and fetch status updates for their orders
     for (const providerId of providerIds) {
       const provider = providerMap.get(providerId);
       if (!provider) {
-        console.warn(`Provider details not found for providerId: ${providerId}. Skipping.`);
+        console.warn(`Provider details not found for ID: ${providerId}. Skipping.`);
         continue;
       }
 
@@ -77,7 +86,6 @@ exports.handler = async () => {
         const response = await axios.post(provider.apiUrl, requestBody);
         const statuses = response.data;
 
-        // 5. Update each order in Firestore with the new status from the provider
         for (const providerOrderId in statuses) {
           const statusInfo = statuses[providerOrderId];
           const originalOrder = ordersForProvider.find(o => o.providerOrderId.toString() === providerOrderId);
@@ -85,7 +93,7 @@ exports.handler = async () => {
           if (originalOrder) {
             const orderRef = db.doc(originalOrder.docPath);
             batch.update(orderRef, {
-              status: statusInfo.status, // e.g., "Processing", "Completed", "Canceled"
+              status: statusInfo.status,
               start_count: parseInt(statusInfo.start_count, 10) || null,
               remains: parseInt(statusInfo.remains, 10) || null,
             });
@@ -103,7 +111,7 @@ exports.handler = async () => {
         return { statusCode: 200, body: JSON.stringify({ message: `Successfully updated ${updatesCount} orders.` }) };
     } else {
         console.log("No order statuses were updated in this run.");
-        return { statusCode: 200, body: JSON.stringify({ message: "No order statuses were updated in this run." }) };
+        return { statusCode: 200, body: JSON.stringify({ message: "No order statuses were updated." }) };
     }
 
   } catch (error) {
@@ -111,6 +119,120 @@ exports.handler = async () => {
     return { statusCode: 500, body: JSON.stringify({ error: "An internal server error occurred." }) };
   }
 };
+```
+```javascript
+// FILE: netlify/functions/place-order.js
+// PURPOSE: Securely places an order after validating user balance.
+
+const admin = require('firebase-admin');
+const axios = require('axios');
+
+// --- Firebase Admin Initialization ---
+try {
+  if (!admin.apps.length) {
+    const privateKey = (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+    if (!process.env.FIREBASE_PROJECT_ID || !privateKey || !process.env.FIREBASE_CLIENT_EMAIL) {
+      throw new Error('Firebase environment variables are not set. Please check your Netlify site configuration.');
+    }
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        privateKey: privateKey,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      }),
+    });
+  }
+} catch (error) {
+  console.error('Firebase Admin Initialization Error:', error);
+}
+
+const db = admin.firestore();
+
+exports.handler = async (event) => {
+  if (!admin.apps.length) {
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: 'Backend is not configured correctly. Missing Firebase credentials.' }),
+    };
+  }
+
+  const { authorization } = event.headers;
+  if (!authorization || !authorization.startsWith('Bearer ')) {
+    return { statusCode: 401, body: JSON.stringify({ error: 'Unauthorized: No token provided.' }) };
+  }
+  
+  try {
+    const idToken = authorization.split('Bearer ')[1];
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const userId = decodedToken.uid;
+    const { serviceId, link, quantity, charge, serviceName, categoryId } = JSON.parse(event.body);
+
+    const userRef = db.collection('users').doc(userId);
+    const orderResult = await db.runTransaction(async (transaction) => {
+      const userDoc = await transaction.get(userRef);
+      if (!userDoc.exists) throw new Error("User not found.");
+      
+      const userData = userDoc.data();
+      if (userData.balance < charge) throw new Error("Insufficient balance.");
+
+      const serviceRef = db.collection(`categories/${categoryId}/services`).doc(serviceId);
+      const serviceDoc = await serviceRef.get();
+      if (!serviceDoc.exists) throw new Error("Service configuration not found.");
+      const serviceData = serviceDoc.data();
+      
+      const providerRef = db.collection('api_providers').doc(serviceData.providerId);
+      const providerDoc = await providerRef.get();
+      if (!providerDoc.exists) throw new Error("API Provider not found.");
+      const { apiUrl, apiKey } = providerDoc.data();
+
+      const requestBody = new URLSearchParams();
+      requestBody.append('key', apiKey);
+      requestBody.append('action', 'add');
+      requestBody.append('service', serviceData.id_api);
+      requestBody.append('link', link);
+      requestBody.append('quantity', quantity);
+
+      const providerResponse = await axios.post(apiUrl, requestBody);
+      const providerOrder = providerResponse.data;
+
+      if (!providerOrder || providerOrder.error) {
+        throw new Error(providerOrder.error || "Failed to place order with provider.");
+      }
+
+      const newBalance = userData.balance - charge;
+      transaction.update(userRef, { balance: newBalance });
+
+      const newOrderRef = db.collection(`users/${userId}/orders`).doc();
+      transaction.set(newOrderRef, {
+        providerOrderId: providerOrder.order,
+        providerId: serviceData.providerId,
+        firestoreServiceId: serviceId,
+        serviceId: serviceData.id_api,
+        serviceName,
+        link,
+        quantity,
+        charge,
+        status: 'Pending',
+        start_count: null,
+        remains: null,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        userEmail: userData.email,
+        categoryId,
+        providerAllowsRefill: serviceData.providerAllowsRefill || false,
+        providerAllowsCancel: serviceData.providerAllowsCancel || false,
+      });
+      
+      return { orderId: newOrderRef.id };
+    });
+
+    return { statusCode: 200, body: JSON.stringify({ success: true, message: "Order placed successfully!", orderId: orderResult.orderId }) };
+
+  } catch (error) {
+    console.error("Order placement failed:", error);
+    return { statusCode: 500, body: JSON.stringify({ error: error.message }) };
+  }
+};
+```
 ```javascript
 // FILE: netlify/functions/refill-order.js
 // PURPOSE: Handles a user's request to refill a specific order.
@@ -119,39 +241,46 @@ const admin = require('firebase-admin');
 const axios = require('axios');
 
 // --- Firebase Admin Initialization ---
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      privateKey: (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-    }),
-  });
+try {
+  if (!admin.apps.length) {
+    const privateKey = (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+    if (!process.env.FIREBASE_PROJECT_ID || !privateKey || !process.env.FIREBASE_CLIENT_EMAIL) {
+      throw new Error('Firebase environment variables are not set.');
+    }
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        privateKey: privateKey,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      }),
+    });
+  }
+} catch (error) {
+  console.error('Firebase Admin Initialization Error:', error);
 }
+
 const db = admin.firestore();
 
-exports.handler = async (event, context) => {
-  // 1. Authenticate the user
+exports.handler = async (event) => {
+  if (!admin.apps.length) {
+    return { statusCode: 500, body: JSON.stringify({ error: 'Backend not configured.' }) };
+  }
+  
   const { authorization } = event.headers;
   if (!authorization || !authorization.startsWith('Bearer ')) {
     return { statusCode: 401, body: JSON.stringify({ error: 'Unauthorized' }) };
   }
-  const idToken = authorization.split('Bearer ')[1];
-  let decodedToken;
+  
   try {
-    decodedToken = await admin.auth().verifyIdToken(idToken);
-  } catch (error) {
-    return { statusCode: 401, body: JSON.stringify({ error: 'Invalid token' }) };
-  }
-  const userId = decodedToken.uid;
-  const { orderId } = JSON.parse(event.body);
+    const idToken = authorization.split('Bearer ')[1];
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const userId = decodedToken.uid;
+    const { orderId } = JSON.parse(event.body);
 
-  if (!orderId) {
-    return { statusCode: 400, body: JSON.stringify({ error: 'Order ID is required.' }) };
-  }
+    if (!orderId) {
+      return { statusCode: 400, body: JSON.stringify({ error: 'Order ID is required.' }) };
+    }
 
-  try {
-    // 2. Get the order details from Firestore
     const orderRef = db.doc(`users/${userId}/orders/${orderId}`);
     const orderDoc = await orderRef.get();
 
@@ -160,7 +289,6 @@ exports.handler = async (event, context) => {
     }
     const orderData = orderDoc.data();
 
-    // 3. Get the API provider's details
     const providerRef = db.doc(`api_providers/${orderData.providerId}`);
     const providerDoc = await providerRef.get();
     if (!providerDoc.exists) {
@@ -168,7 +296,6 @@ exports.handler = async (event, context) => {
     }
     const { apiUrl, apiKey } = providerDoc.data();
 
-    // 4. Send the refill request to the provider's API
     const requestBody = new URLSearchParams();
     requestBody.append('key', apiKey);
     requestBody.append('action', 'refill');
@@ -181,7 +308,6 @@ exports.handler = async (event, context) => {
       throw new Error(refillData.error);
     }
     
-    // 5. Optionally, log the refill request
     await orderRef.collection('actions').add({
         type: 'refill_request',
         providerResponse: refillData,
@@ -195,6 +321,7 @@ exports.handler = async (event, context) => {
     return { statusCode: 500, body: JSON.stringify({ error: error.message || 'Failed to process refill request.' }) };
   }
 };
+```
 ```javascript
 // FILE: netlify/functions/cancel-order.js
 // PURPOSE: Handles a user's request to cancel a specific order.
@@ -203,39 +330,46 @@ const admin = require('firebase-admin');
 const axios = require('axios');
 
 // --- Firebase Admin Initialization ---
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      privateKey: (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-    }),
-  });
+try {
+  if (!admin.apps.length) {
+    const privateKey = (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+    if (!process.env.FIREBASE_PROJECT_ID || !privateKey || !process.env.FIREBASE_CLIENT_EMAIL) {
+      throw new Error('Firebase environment variables are not set.');
+    }
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        privateKey: privateKey,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      }),
+    });
+  }
+} catch (error) {
+  console.error('Firebase Admin Initialization Error:', error);
 }
+
 const db = admin.firestore();
 
-exports.handler = async (event, context) => {
-  // 1. Authenticate the user
+exports.handler = async (event) => {
+  if (!admin.apps.length) {
+    return { statusCode: 500, body: JSON.stringify({ error: 'Backend not configured.' }) };
+  }
+  
   const { authorization } = event.headers;
   if (!authorization || !authorization.startsWith('Bearer ')) {
     return { statusCode: 401, body: JSON.stringify({ error: 'Unauthorized' }) };
   }
-  const idToken = authorization.split('Bearer ')[1];
-  let decodedToken;
+  
   try {
-    decodedToken = await admin.auth().verifyIdToken(idToken);
-  } catch (error) {
-    return { statusCode: 401, body: JSON.stringify({ error: 'Invalid token' }) };
-  }
-  const userId = decodedToken.uid;
-  const { orderId } = JSON.parse(event.body);
+    const idToken = authorization.split('Bearer ')[1];
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const userId = decodedToken.uid;
+    const { orderId } = JSON.parse(event.body);
 
-  if (!orderId) {
-    return { statusCode: 400, body: JSON.stringify({ error: 'Order ID is required.' }) };
-  }
+    if (!orderId) {
+      return { statusCode: 400, body: JSON.stringify({ error: 'Order ID is required.' }) };
+    }
 
-  try {
-    // 2. Get the order details from Firestore
     const orderRef = db.doc(`users/${userId}/orders/${orderId}`);
     const orderDoc = await orderRef.get();
 
@@ -244,7 +378,6 @@ exports.handler = async (event, context) => {
     }
     const orderData = orderDoc.data();
 
-    // 3. Get the API provider's details
     const providerRef = db.doc(`api_providers/${orderData.providerId}`);
     const providerDoc = await providerRef.get();
     if (!providerDoc.exists) {
@@ -252,7 +385,6 @@ exports.handler = async (event, context) => {
     }
     const { apiUrl, apiKey } = providerDoc.data();
 
-    // 4. Send the cancel request to the provider's API
     const requestBody = new URLSearchParams();
     requestBody.append('key', apiKey);
     requestBody.append('action', 'cancel');
@@ -265,7 +397,6 @@ exports.handler = async (event, context) => {
       throw new Error(cancelData.error);
     }
     
-    // 5. Log the cancellation request. The main status update function will handle refunds if the status changes to "Canceled".
     await orderRef.collection('actions').add({
         type: 'cancel_request',
         providerResponse: cancelData,
