@@ -26,7 +26,7 @@ try {
 }
 
 exports.handler = async () => {
-  console.log('Function update-order-status triggered by schedule.');
+  console.log('--- Executing update-order-status function ---');
 
   if (!db) {
     console.error('Firebase Admin not initialized. Exiting function. This is likely due to missing environment variables.');
@@ -146,6 +146,8 @@ try {
 }
 
 exports.handler = async (event) => {
+  console.log('--- Executing place-order function ---');
+
   if (!db) {
     console.error('Firebase Admin not initialized. Exiting function.');
     return {
@@ -259,6 +261,8 @@ try {
 }
 
 exports.handler = async (event) => {
+  console.log('--- Executing refill-order function ---');
+
   if (!db) {
     console.error('Firebase Admin not initialized. Exiting function.');
     return { statusCode: 500, body: JSON.stringify({ error: 'Backend not configured.' }) };
@@ -348,6 +352,8 @@ try {
 }
 
 exports.handler = async (event) => {
+  console.log('--- Executing cancel-order function ---');
+
   if (!db) {
     console.error('Firebase Admin not initialized. Exiting function.');
     return { statusCode: 500, body: JSON.stringify({ error: 'Backend not configured.' }) };
