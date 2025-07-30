@@ -1,84 +1,100 @@
 // FILE: netlify/functions/place-order.js
+// PURPOSE: Securely places an order after validating user balance.
 
 const admin = require('firebase-admin');
-const axios = require('axios'); // Or your preferred HTTP client
+const axios = require('axios');
 
-// --- Firebase Admin Initialization (ensure this is configured) ---
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-    }),
-  });
+// --- Firebase Admin Initialization ---
+let db;
+try {
+  if (!admin.apps.length) {
+    const privateKey = (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+    if (!process.env.FIREBASE_PROJECT_ID || !privateKey || !process.env.FIREBASE_CLIENT_EMAIL) {
+      throw new Error('Firebase environment variables are not set. Please check your Netlify site configuration.');
+    }
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        privateKey: privateKey,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      }),
+    });
+  }
+  db = admin.firestore();
+} catch (error) {
+  console.error('CRITICAL: Firebase Admin Initialization Error:', error.message);
 }
-const db = admin.firestore();
 
 exports.handler = async (event) => {
-  // 1. Authenticate the user
+  console.log('--- Executing place-order function ---');
+
+  if (!db) {
+    console.error('Firebase Admin not initialized. Exiting function.');
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: 'Backend is not configured correctly. Missing Firebase credentials.' }),
+    };
+  }
+
   const { authorization } = event.headers;
   if (!authorization || !authorization.startsWith('Bearer ')) {
-    return { statusCode: 401, body: JSON.stringify({ error: 'Unauthorized' }) };
+    return { statusCode: 401, body: JSON.stringify({ error: 'Unauthorized: No token provided.' }) };
   }
-  const idToken = authorization.split('Bearer ')[1];
-  let decodedToken;
+  
   try {
-    decodedToken = await admin.auth().verifyIdToken(idToken);
-  } catch (error) {
-    return { statusCode: 401, body: JSON.stringify({ error: 'Invalid token' }) };
-  }
-  const userId = decodedToken.uid;
-  const { serviceId, link, quantity, charge, serviceName, categoryId } = JSON.parse(event.body);
+    const idToken = authorization.split('Bearer ')[1];
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const userId = decodedToken.uid;
+    const { serviceId, link, quantity, charge, serviceName, categoryId } = JSON.parse(event.body);
 
-  // 2. Run a Firestore Transaction to ensure data consistency
-  const userRef = db.collection('users').doc(userId);
-  try {
-    await db.runTransaction(async (transaction) => {
+    console.log(`Placing order for user ${userId}, service ${serviceId}`);
+
+    const userRef = db.collection('users').doc(userId);
+    const orderResult = await db.runTransaction(async (transaction) => {
       const userDoc = await transaction.get(userRef);
-      if (!userDoc.exists) {
-        throw new Error("User not found.");
-      }
+      if (!userDoc.exists) throw new Error("User not found.");
+      
       const userData = userDoc.data();
-      if (userData.balance < charge) {
-        throw new Error("Insufficient balance.");
-      }
+      if (userData.balance < charge) throw new Error("Insufficient balance.");
 
-      // 3. Place the order with the SMM provider
-      // First, get provider details from the service document
-      const serviceRef = db.collection(`categories/${categoryId}/services`).doc(serviceId); // Assuming serviceId is the doc ID now
-      const serviceDoc = await serviceRef.get();
+      const serviceRef = db.collection(`categories/${categoryId}/services`).doc(serviceId);
+      const serviceDoc = await transaction.get(serviceRef); // Use transaction.get
       if (!serviceDoc.exists) throw new Error("Service configuration not found.");
+      const serviceData = serviceDoc.data();
       
-      const providerRef = db.collection('api_providers').doc(serviceDoc.data().providerId);
-      const providerDoc = await providerRef.get();
+      const providerRef = db.collection('api_providers').doc(serviceData.providerId);
+      const providerDoc = await transaction.get(providerRef); // Use transaction.get
       if (!providerDoc.exists) throw new Error("API Provider not found.");
-      
       const { apiUrl, apiKey } = providerDoc.data();
-      const providerServiceId = serviceDoc.data().providerServiceId;
+
+      console.log(`Found provider ${serviceData.providerId}. Placing order with API.`);
 
       const requestBody = new URLSearchParams();
       requestBody.append('key', apiKey);
       requestBody.append('action', 'add');
-      requestBody.append('service', providerServiceId);
+      requestBody.append('service', serviceData.id_api);
       requestBody.append('link', link);
       requestBody.append('quantity', quantity);
 
       const providerResponse = await axios.post(apiUrl, requestBody);
       const providerOrder = providerResponse.data;
 
-      if (!providerOrder || !providerOrder.order) {
+      if (!providerOrder || providerOrder.error) {
         throw new Error(providerOrder.error || "Failed to place order with provider.");
       }
+      
+      console.log(`Provider accepted order. Provider Order ID: ${providerOrder.order}`);
 
-      // 4. Deduct balance and create the order document
       const newBalance = userData.balance - charge;
       transaction.update(userRef, { balance: newBalance });
 
       const newOrderRef = db.collection(`users/${userId}/orders`).doc();
+      
       transaction.set(newOrderRef, {
-        providerOrderId: providerOrder.order, // IMPORTANT: Save the provider's order ID
-        serviceId: serviceDoc.data().id_api,
+        providerOrderId: providerOrder.order,
+        providerId: serviceData.providerId,
+        firestoreServiceId: serviceId,
+        serviceId: serviceData.id_api,
         serviceName,
         link,
         quantity,
@@ -89,10 +105,15 @@ exports.handler = async (event) => {
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         userEmail: userData.email,
         categoryId,
+        providerAllowsRefill: serviceData.providerAllowsRefill || false,
+        providerAllowsCancel: serviceData.providerAllowsCancel || false,
       });
+      
+      console.log(`Order document created in Firestore: ${newOrderRef.id}`);
+      return { orderId: newOrderRef.id };
     });
 
-    return { statusCode: 200, body: JSON.stringify({ success: true, message: "Order placed successfully!" }) };
+    return { statusCode: 200, body: JSON.stringify({ success: true, message: "Order placed successfully!", orderId: orderResult.orderId }) };
 
   } catch (error) {
     console.error("Order placement failed:", error);

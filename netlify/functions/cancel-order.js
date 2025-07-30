@@ -1,5 +1,5 @@
-// FILE: netlify/functions/refill-order.js
-// PURPOSE: Handles a user's request to refill a specific order.
+// FILE: netlify/functions/cancel-order.js
+// PURPOSE: Handles a user's request to cancel a specific order.
 
 const admin = require('firebase-admin');
 const axios = require('axios');
@@ -26,7 +26,7 @@ try {
 }
 
 exports.handler = async (event) => {
-  console.log('--- Executing refill-order function ---');
+  console.log('--- Executing cancel-order function ---');
 
   if (!db) {
     console.error('Firebase Admin not initialized. Exiting function.');
@@ -65,26 +65,26 @@ exports.handler = async (event) => {
 
     const requestBody = new URLSearchParams();
     requestBody.append('key', apiKey);
-    requestBody.append('action', 'refill');
+    requestBody.append('action', 'cancel');
     requestBody.append('order', orderData.providerOrderId);
 
     const providerResponse = await axios.post(apiUrl, requestBody);
-    const refillData = providerResponse.data;
+    const cancelData = providerResponse.data;
 
-    if (refillData.error) {
-      throw new Error(refillData.error);
+    if (cancelData.error) {
+      throw new Error(cancelData.error);
     }
     
     await orderRef.collection('actions').add({
-        type: 'refill_request',
-        providerResponse: refillData,
+        type: 'cancel_request',
+        providerResponse: cancelData,
         requestedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    return { statusCode: 200, body: JSON.stringify({ success: true, message: `Refill request submitted successfully. Refill ID: ${refillData.refill}` }) };
+    return { statusCode: 200, body: JSON.stringify({ success: true, message: 'Cancellation request submitted successfully.' }) };
 
   } catch (error) {
-    console.error("Refill request failed:", error.message);
-    return { statusCode: 500, body: JSON.stringify({ error: error.message || 'Failed to process refill request.' }) };
+    console.error("Cancel request failed:", error.message);
+    return { statusCode: 500, body: JSON.stringify({ error: error.message || 'Failed to process cancel request.' }) };
   }
 };
