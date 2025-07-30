@@ -42,13 +42,13 @@ import {
 // --- Firebase Configuration ---
 // IMPORTANT: In a real production app, use environment variables for this configuration.
 const firebaseConfig = {
-    apiKey: "AIzaSyBgjU9fzFsfx6-gv4p0WWH77_U5BPk69A0",
-    authDomain: "smmp-4b3cc.firebaseapp.com",
-    projectId: "smmp-4b3cc",
-    storageBucket: "smmp-4b3cc.firebasestorage.app",
-    messagingSenderId: "43467456148",
-    appId: "1:43467456148:web:368b011abf362791edfe81",
-    measurementId: "G-Y6HBHEL742"
+    // Your Firebase config details here
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_AUTH_DOMAIN",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_STORAGE_BUCKET",
+    messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+    appId: "YOUR_APP_ID",
 };
 
 
@@ -385,7 +385,8 @@ function App() {
 
         try {
             const token = await user.getIdToken();
-            const response = await fetch('/.netlify/functions/place-order', {
+            // FIX: Use the correct /api/ proxy path
+            const response = await fetch('/api/place-order', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -867,7 +868,7 @@ function AutomatedPaymentGateway({ user, showAlert }) {
             const token = await user.getIdToken();
             
             // This points to your Netlify function for initiating payments.
-            const functionUrl = '/.netlify/functions/initiate-payment';
+            const functionUrl = '/api/initiate-payment';
             
             const response = await fetch(functionUrl, {
                 method: 'POST',
@@ -1529,7 +1530,8 @@ function OrdersHistory({ user, orders, formatCurrency, showAlert }) {
         setIsRefreshing(true);
         try {
             const token = await user.getIdToken();
-            const response = await fetch('/.netlify/functions/update-order-status', {
+            // FIX: Use the correct /api/ proxy path
+            const response = await fetch('/api/update-order-status', {
                 method: 'POST', // Use POST for triggering actions
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -1545,6 +1547,28 @@ function OrdersHistory({ user, orders, formatCurrency, showAlert }) {
             showAlert("Error", error.message);
         } finally {
             setIsRefreshing(false);
+        }
+    };
+
+    const handleOrderAction = async (action, orderId) => {
+        try {
+            const token = await user.getIdToken();
+            const response = await fetch(`/api/${action}-order`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                },
+                body: JSON.stringify({ orderId }),
+            });
+            const result = await response.json();
+            if (!response.ok) {
+                throw new Error(result.error);
+            }
+            showAlert("Success", result.message);
+        } catch (error) {
+            console.error(`Error processing ${action}:`, error);
+            showAlert("Error", error.message);
         }
     };
 
@@ -1588,8 +1612,8 @@ function OrdersHistory({ user, orders, formatCurrency, showAlert }) {
                                 <td className="p-3 text-text-secondary">{order.remains ?? 'N/A'}</td>
                                 <td className="p-3 text-center"><StatusBadge status={order.status} /></td>
                                 <td className="p-3 text-center space-x-2">
-                                    {order.providerAllowsRefill && <button className="text-xs bg-blue-500 text-white px-2 py-1 rounded">Refill</button>}
-                                    {order.providerAllowsCancel && <button className="text-xs bg-red-500 text-white px-2 py-1 rounded">Cancel</button>}
+                                    {order.providerAllowsRefill && <button onClick={() => handleOrderAction('refill', order.id)} className="text-xs bg-blue-500 text-white px-2 py-1 rounded">Refill</button>}
+                                    {order.providerAllowsCancel && <button onClick={() => handleOrderAction('cancel', order.id)} className="text-xs bg-red-500 text-white px-2 py-1 rounded">Cancel</button>}
                                 </td>
                             </tr>
                         ))}
