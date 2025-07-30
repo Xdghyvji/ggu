@@ -42,13 +42,13 @@ import {
 // --- Firebase Configuration ---
 // IMPORTANT: In a real production app, use environment variables for this configuration.
 const firebaseConfig = {
-    apiKey: "AIzaSyBgjU9fzFsfx6-gv4p0WWH77_U5BPk69A0",
-    authDomain: "smmp-4b3cc.firebaseapp.com",
-    projectId: "smmp-4b3cc",
-    storageBucket: "smmp-4b3cc.appspot.com",
-    messagingSenderId: "43467456148",
-    appId: "1:43467456148:web:368b011abf362791edfe81",
-    measurementId: "G-Y6HBHEL742"
+    // Your Firebase config details here
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_AUTH_DOMAIN",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_STORAGE_BUCKET",
+    messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+    appId: "YOUR_APP_ID",
 };
 
 
@@ -62,7 +62,6 @@ const STALE_TRANSACTION_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
 const PINNED_CURRENCIES = ['PKR', 'USD', 'EUR', 'GBP', 'AED'];
 const CURRENCY_SYMBOLS = {
     'PKR': '₨', 'USD': '$', 'EUR': '€', 'GBP': '£', 'AED': 'د.إ',
-    // Add more symbols as needed
 };
 
 
@@ -82,13 +81,6 @@ const SocialIcon = ({ category }) => {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-
-
-// --- Dummy logAdminAction for frontend ---
-const logAdminAction = async (action, details) => {
-    // In a real app, this could be a call to a cloud function to log actions.
-    console.log("Log Action:", action, details);
-};
 
 // --- Theme Styles Component ---
 const ThemeStyles = () => (
@@ -226,7 +218,7 @@ function App() {
 
     const [page, setPage] = useState('dashboard');
     const [view, setView] = useState('landing');
-    const [selectedService, setSelectedService] = useState(null);
+    const [selectedServiceInfo, setSelectedServiceInfo] = useState(null); // Changed to hold { service, categoryId }
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [theme, setTheme] = useState('default');
     const [pageTemplates, setPageTemplates] = useState({ landing: 'default', login: 'default' });
@@ -252,7 +244,6 @@ function App() {
     useEffect(() => {
         const fetchRates = async () => {
             try {
-                // Using a free, public API for exchange rates. Replace with a more reliable one for production.
                 const response = await fetch(`https://api.exchangerate-api.com/v4/latest/${BASE_CURRENCY}`);
                 const data = await response.json();
                 if (data.rates) {
@@ -340,16 +331,6 @@ function App() {
             const unsubscribeOrders = onSnapshot(ordersQuery, (querySnapshot) => {
                 const ordersData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 setOrders(ordersData);
-
-                const newTotalSpent = ordersData
-                    .filter(o => o.status === 'Completed')
-                    .reduce((sum, o) => sum + (o.charge || 0), 0);
-                
-                if (userData && userData.totalSpent !== newTotalSpent) {
-                    const userRef = doc(db, "users", user.uid);
-                    updateDoc(userRef, { totalSpent: newTotalSpent });
-                }
-
             }, (error) => {
                 console.error("Error fetching orders:", error);
             });
@@ -367,7 +348,7 @@ function App() {
                 unsubscribeNotifications();
             };
         }
-    }, [user, userData]);
+    }, [user]);
 
     // --- Helper Functions ---
     const formatCurrency = useMemo(() => (amount) => {
@@ -382,42 +363,49 @@ function App() {
                 maximumFractionDigits: 2,
             }).format(convertedAmount);
         } catch (e) {
-            // Fallback for unsupported currencies
             return `${currency} ${convertedAmount.toFixed(2)}`;
         }
     }, [currency, exchangeRates]);
 
     const navigateTo = (pageName) => {
         setPage(pageName);
-        if (pageName !== 'newOrder') setSelectedService(null);
+        if (pageName !== 'newOrder') setSelectedServiceInfo(null);
         setIsMobileMenuOpen(false);
     };
 
+    /**
+     * Calls the backend Netlify function to place an order.
+     * This is the new, secure way to handle order creation.
+     */
     const placeNewOrder = async (order) => {
-        if (!user || !userData) return;
-
-        if (userData.balance < order.charge) {
-            showAlert("Order Error", "Insufficient balance to place this order.");
-            return Promise.reject("Insufficient balance");
+        if (!user) {
+            showAlert("Authentication Error", "You must be logged in to place an order.");
+            return Promise.reject("User not authenticated");
         }
 
         try {
-            const newBalance = userData.balance - order.charge;
-            await updateDoc(doc(db, "users", user.uid), { balance: newBalance });
-
-            const newOrderRef = await addDoc(collection(db, "users", user.uid, "orders"), {
-                ...order,
-                orderId: `ORD-${Date.now()}`,
-                status: 'Pending',
-                start_count: null, // Initialize with null
-                remains: null,
-                date: new Date().toISOString().split('T')[0],
-                createdAt: Timestamp.now()
+            const token = await user.getIdToken();
+            const response = await fetch('/.netlify/functions/place-order', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                },
+                body: JSON.stringify(order),
             });
 
-            await logAdminAction("ORDER_PLACED", { orderId: newOrderRef.id, userId: user.uid, serviceId: order.serviceId, charge: order.charge });
+            const result = await response.json();
+
+            if (!response.ok) {
+                // If the server returns an error, show it to the user.
+                throw new Error(result.error || 'An unknown error occurred.');
+            }
+
+            // The backend handled the order. The frontend's onSnapshot listener will automatically
+            // update the balance and order history. We just need to give feedback.
+            showAlert("Order Placed", "Your order has been successfully submitted and is now being processed.");
             navigateTo('orders');
-            return Promise.resolve("Order placed successfully!");
+            return Promise.resolve(result.message);
 
         } catch (error) {
             console.error("Frontend Order Error:", error);
@@ -426,8 +414,8 @@ function App() {
         }
     };
 
-    const handleSelectService = (service) => {
-        setSelectedService(service);
+    const handleSelectService = (service, categoryId) => {
+        setSelectedServiceInfo({ service, categoryId });
         setPage('newOrder');
     };
 
@@ -464,7 +452,7 @@ function App() {
                 case 'dashboard': return <Dashboard {...props} stats={{ balance: userData.balance, totalSpent: userData.totalSpent }} />;
                 case 'services': return <ServicesList {...props} onOrderSelect={handleSelectService} />;
                 case 'orders': return <OrdersHistory {...props} />;
-                case 'newOrder': return <NewOrderPage {...props} service={selectedService} userBalance={userData.balance} onSubmit={placeNewOrder} onBack={() => navigateTo('services')} />;
+                case 'newOrder': return <NewOrderPage {...props} serviceInfo={selectedServiceInfo} userBalance={userData.balance} onSubmit={placeNewOrder} onBack={() => navigateTo('services')} />;
                 case 'addFunds': return <AddFundsPage {...props} />;
                 case 'transactions': return <TransactionsPage {...props} />;
                 case 'support': return <SupportPage {...props} />;
@@ -518,9 +506,7 @@ function App() {
 }
 
 // --- Landing Page ---
-// ... (LandingPage and other static components remain unchanged)
 function LandingPage({ setView, template }) {
-    // This is a self-contained component for the landing page header
     const LandingHeader = () => (
         <header className="p-4 flex justify-between items-center container mx-auto text-white">
             <h1 className="text-xl font-bold">GET GROW UP SMM PANEL</h1>
@@ -531,7 +517,6 @@ function LandingPage({ setView, template }) {
         </header>
     );
 
-    // This is a self-contained component for the main hero section
     const HeroSection = () => (
         <main className="flex flex-col items-center justify-center text-center px-4 text-white" style={{ minHeight: '80vh' }}>
             <h2 className="text-5xl md:text-6xl font-extrabold leading-tight mb-4">
@@ -546,7 +531,6 @@ function LandingPage({ setView, template }) {
         </main>
     );
 
-    // FIX: The templates are now self-contained and don't rely on external state.
     switch (template) {
         case 'minimal':
             return (
@@ -579,7 +563,7 @@ function LandingPage({ setView, template }) {
                              <button onClick={() => setView('auth')} className="bg-blue-700 text-white font-bold py-3 px-6 rounded-md hover:bg-blue-800 transition">
                                  Login or Sign Up
                              </button>
-                         </div>
+                       </div>
                     </div>
                 </div>
             );
@@ -597,59 +581,6 @@ function LandingPage({ setView, template }) {
             );
     }
 }
-
-
-// --- Content Pages ---
-// ... (Static pages remain unchanged)
-function StaticPage({ title, children, setView }) {
-    return (
-        <div className="min-h-screen bg-slate-100">
-            <header className="p-4 bg-white shadow-sm flex justify-between items-center">
-                <h1 className="text-xl font-bold text-slate-800">GET GROW UP SMM PANEL</h1>
-                <button onClick={() => setView('landing')} className="px-4 py-2 text-sm font-semibold rounded-md hover:bg-slate-200">&larr; Back to Home</button>
-            </header>
-            <main className="container mx-auto p-8">
-                <div className="bg-white p-8 rounded-lg shadow-md">
-                    <h2 className="text-3xl font-bold mb-6">{title}</h2>
-                    <div className="prose max-w-none">
-                        {children}
-                    </div>
-                </div>
-            </main>
-        </div>
-    );
-}
-function AboutPage({ setView }) {
-    return (
-        <StaticPage title="About Us" setView={setView}>
-            <p>Welcome to GET GROW UP, Pakistan's premier Social Media Marketing (SMM) panel. Our mission is to empower individuals, influencers, and businesses to achieve unparalleled growth in the digital landscape.</p>
-            <p>Founded on the principles of speed, reliability, and affordability, we provide a comprehensive suite of services designed to enhance your social media presence across all major platforms. Whether you're looking to boost your followers, increase engagement, or drive views, our automated platform delivers high-quality results instantly.</p>
-            <p>We believe in the power of social media to transform brands and build communities. Our team is dedicated to providing you with the tools and support you need to succeed. Join us and take the first step towards exceptional social media growth.</p>
-        </StaticPage>
-    );
-}
-
-function PrivacyPolicyPage({ setView }) {
-    return (
-        <StaticPage title="Privacy Policy" setView={setView}>
-            <p>Your privacy is important to us. It is GET GROW UP's policy to respect your privacy regarding any information we may collect from you across our website.</p>
-            <p>We only ask for personal information when we truly need it to provide a service to you. We collect it by fair and lawful means, with your knowledge and consent. We also let you know why we’re collecting it and how it will be used.</p>
-            <p>We only retain collected information for as long as necessary to provide you with your requested service. What data we store, we’ll protect within commercially acceptable means to prevent loss and theft, as well as unauthorized access, disclosure, copying, use or modification.</p>
-            <p>We don’t share any personally identifying information publicly or with third-parties, except when required to by law.</p>
-        </StaticPage>
-    );
-}
-
-function DisclaimerPage({ setView }) {
-    return (
-        <StaticPage title="Disclaimer" setView={setView}>
-            <p>The information provided by GET GROW UP SMM panel on our website is for general informational purposes only. All information on the site is provided in good faith, however we make no representation or warranty of any kind, express or implied, regarding the accuracy, adequacy, validity, reliability, availability, or completeness of any information on the site.</p>
-            <p>Under no circumstance shall we have any liability to you for any loss or damage of any kind incurred as a result of the use of the site or reliance on any information provided on the site. Your use of the site and your reliance on any information on the site is solely at your own risk.</p>
-            <p>The services provided are for promotional purposes. We do not guarantee any specific outcomes such as sales, conversions, or business growth.</p>
-        </StaticPage>
-    );
-}
-
 
 // --- Login Page Component ---
 function LoginPage({ setView, showAlert, template }) {
@@ -914,7 +845,7 @@ function FloatingWhatsAppButton() {
     )
 }
 
-// --- Automated Payment Gateway Component (CORRECTED) ---
+// --- Automated Payment Gateway Component ---
 function AutomatedPaymentGateway({ user, showAlert }) {
     const [amount, setAmount] = useState('');
     const [loading, setLoading] = useState(false);
@@ -935,11 +866,9 @@ function AutomatedPaymentGateway({ user, showAlert }) {
         try {
             const token = await user.getIdToken();
             
-            // This now points to the new, renamed function.
+            // This points to your Netlify function for initiating payments.
             const functionUrl = '/.netlify/functions/initiate-payment';
             
-            console.log(`%c[DEBUG] Calling Netlify function: ${functionUrl}`, 'color: #00ff00; font-weight: bold;');
-
             const response = await fetch(functionUrl, {
                 method: 'POST',
                 headers: {
@@ -1028,7 +957,7 @@ function AutomatedPaymentGateway({ user, showAlert }) {
 
 
 // --- Add Funds Page ---
-function AddFundsPage({ user, userData, showAlert }) {
+function AddFundsPage({ user, showAlert }) {
     const [modalOpen, setModalOpen] = useState(false);
     const [paymentMethod, setPaymentMethod] = useState(null);
     const [paymentMethods, setPaymentMethods] = useState([]);
@@ -1074,7 +1003,7 @@ function AddFundsPage({ user, userData, showAlert }) {
                     ...requestData,
                     userEmail: user.email,
                     status: 'pending',
-                    date: Timestamp.now() // Use Firestore Timestamp
+                    date: Timestamp.now()
                 });
                 
                 transaction.set(trxIdRef, { 
@@ -1125,7 +1054,7 @@ function AddFundsPage({ user, userData, showAlert }) {
 }
 
 
-function PaymentModal({ user, method, onClose, onSubmit }) {
+function PaymentModal({ method, onClose, onSubmit }) {
     const [amount, setAmount] = useState('');
     const [trxId, setTrxId] = useState('');
     const [receiptFile, setReceiptFile] = useState(null);
@@ -1155,10 +1084,10 @@ function PaymentModal({ user, method, onClose, onSubmit }) {
         if (receiptFile) {
             const formData = new FormData();
             formData.append('file', receiptFile);
-            formData.append('upload_preset', "mubashir"); // Use your Cloudinary upload preset
+            formData.append('upload_preset', "YOUR_CLOUDINARY_UPLOAD_PRESET"); 
 
             try {
-                const response = await fetch(`https://api.cloudinary.com/v1_1/dis1ptaip/image/upload`, { // Use your Cloudinary cloud name
+                const response = await fetch(`https://api.cloudinary.com/v1_1/YOUR_CLOUDINARY_CLOUD_NAME/image/upload`, {
                     method: 'POST',
                     body: formData,
                 });
@@ -1273,7 +1202,7 @@ function Dashboard({ stats, formatCurrency, placeNewOrder, userData, navigateTo,
 const StatCard = ({ icon: Icon, title, value, color }) => (<div className="bg-card p-6 rounded-lg shadow-md flex items-center"><div className={`mr-4 p-3 rounded-full ${color}`}><Icon className="h-6 w-6 text-white" /></div><div><p className="text-sm text-text-secondary">{title}</p><p className="text-2xl font-bold text-text-primary">{value}</p></div></div>);
 
 
-function QuickOrderBox({ userBalance, onSubmit, formatCurrency, navigateTo, showAlert, currency, exchangeRates, orders }) {
+function QuickOrderBox({ userBalance, onSubmit, formatCurrency, navigateTo, showAlert, orders }) {
     const [activeTab, setActiveTab] = useState('new');
     const [categories, setCategories] = useState([]);
     const [services, setServices] = useState([]);
@@ -1304,6 +1233,7 @@ function QuickOrderBox({ userBalance, onSubmit, formatCurrency, navigateTo, show
     useEffect(() => {
         if (!selectedCategory) {
             setServices([]);
+            setSelectedService(null);
             return;
         }
         setLoading(true);
@@ -1313,9 +1243,8 @@ function QuickOrderBox({ userBalance, onSubmit, formatCurrency, navigateTo, show
             setServices(servicesData);
             setLoading(false);
             
-            // If reorder data is pending, set the service now
             if (reorderData) {
-                const serviceToSelect = servicesData.find(s => s.id_api === reorderData.serviceId);
+                const serviceToSelect = servicesData.find(s => s.id === reorderData.firestoreServiceId);
                 if (serviceToSelect) {
                     setSelectedService(serviceToSelect);
                     setLink(reorderData.link);
@@ -1349,13 +1278,13 @@ function QuickOrderBox({ userBalance, onSubmit, formatCurrency, navigateTo, show
     };
     
     const handleReorder = (order) => {
-        if (!order.categoryId || !order.serviceId) {
+        if (!order.categoryId || !order.firestoreServiceId) {
             showAlert("Re-order Error", "This order is missing some information and cannot be re-ordered automatically.");
             return;
         }
-        setReorderData(order); // Set the data to trigger service loading
-        setSelectedCategory(order.categoryId); // This triggers the useEffect for services
-        setActiveTab('new'); // Switch back to the new order tab
+        setReorderData(order);
+        setSelectedCategory(order.categoryId);
+        setActiveTab('new');
     };
 
     const handleSubmit = async (e) => {
@@ -1375,16 +1304,15 @@ function QuickOrderBox({ userBalance, onSubmit, formatCurrency, navigateTo, show
         setIsSubmitting(true);
         try {
             await onSubmit({
-                categoryId: selectedCategory, // Pass categoryId for re-ordering
-                serviceId: selectedService.id_api,
+                categoryId: selectedCategory,
+                serviceId: selectedService.id, // Pass Firestore Document ID
                 serviceName: selectedService.name,
                 link,
                 quantity: numQuantity,
                 charge
             });
             setSuccess(true);
-            showAlert("Order Placed", "Your order has been placed successfully! You will be redirected shortly.");
-            setTimeout(() => navigateTo('orders'), 1500);
+            // The placeNewOrder function will handle alerts and navigation
         } catch (err) {
             setError(err.toString());
         } finally {
@@ -1475,7 +1403,7 @@ function QuickOrderBox({ userBalance, onSubmit, formatCurrency, navigateTo, show
 }
 
 
-function ServicesList({ onOrderSelect, formatCurrency, currency, exchangeRates }) {
+function ServicesList({ onOrderSelect, formatCurrency }) {
     const [categories, setCategories] = useState([]);
     const [openCategory, setOpenCategory] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
@@ -1521,7 +1449,6 @@ function ServicesList({ onOrderSelect, formatCurrency, currency, exchangeRates }
         return categories.map(cat => {
             let services = cat.services;
 
-            // Search filter
             if (searchTerm) {
                 services = services.filter(s =>
                     (s.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -1529,14 +1456,12 @@ function ServicesList({ onOrderSelect, formatCurrency, currency, exchangeRates }
                 );
             }
             
-            // Tag filter
             if (filterTags.length > 0) {
                 services = services.filter(s => 
                     filterTags.every(tag => s.tags && s.tags.includes(tag))
                 );
             }
             
-            // Sorting
             if (sortBy === 'rate-asc') {
                 services.sort((a, b) => a.rate - b.rate);
             } else if (sortBy === 'rate-desc') {
@@ -1592,23 +1517,96 @@ function ServicesList({ onOrderSelect, formatCurrency, currency, exchangeRates }
                     </div>
                 </div>
             </div>
-            <div className="space-y-3">{filteredCategories.map(category => (<div key={category.id} className="bg-card rounded-lg shadow-md overflow-hidden"><button onClick={() => toggleCategory(category.id)} className="w-full flex justify-between items-center p-4 text-left bg-background-alt hover:bg-border-color"><h3 className="font-semibold text-text-primary flex items-center"><SocialIcon category={category.name} /> {category.name}</h3>{openCategory === category.id ? <ChevronUp className="h-5 w-5 text-text-secondary" /> : <ChevronDown className="h-5 w-5 text-text-secondary" />}</button>{openCategory === category.id && (<div className="overflow-x-auto"><table className="w-full text-sm"><thead className="text-text-secondary"><tr><th className="p-3 text-left">ID</th><th className="p-3 text-left w-1/2">Name</th><th className="p-3 text-left">Rate / 1000</th><th className="p-3 text-left">Min/Max</th><th className="p-3 text-right">Action</th></tr></thead><tbody className="divide-y divide-border-color">{category.services.map(service => (<tr key={service.id}><td className="p-3 text-text-secondary">{service.id_api}</td><td className="p-3 text-text-primary font-medium"><div className="flex items-center gap-2">{service.name} <Info className="h-4 w-4 text-blue-400 cursor-pointer flex-shrink-0" onClick={(e) => {e.stopPropagation(); setServiceDetails(service);}} /></div><div className="flex flex-wrap gap-1 mt-1">{service.tags?.map(tag => <ServiceTag key={tag} tagName={tag} />)}</div></td><td className="p-3 text-green-600 font-semibold">{formatCurrency(service.rate)}</td><td className="p-3 text-text-secondary">{service.min} / {service.max}</td><td className="p-3 text-right"><button onClick={() => onOrderSelect(service)} className="bg-primary text-white px-4 py-1.5 rounded-full hover:bg-primary-hover text-xs font-bold transition">Order</button></td></tr>))}</tbody></table></div>)}</div>))}{filteredCategories.length === 0 && <div className="text-center py-10 bg-card rounded-lg shadow-md"><p className="text-text-secondary">No services found for your filters.</p></div>}</div>
+            <div className="space-y-3">{filteredCategories.map(category => (<div key={category.id} className="bg-card rounded-lg shadow-md overflow-hidden"><button onClick={() => toggleCategory(category.id)} className="w-full flex justify-between items-center p-4 text-left bg-background-alt hover:bg-border-color"><h3 className="font-semibold text-text-primary flex items-center"><SocialIcon category={category.name} /> {category.name}</h3>{openCategory === category.id ? <ChevronUp className="h-5 w-5 text-text-secondary" /> : <ChevronDown className="h-5 w-5 text-text-secondary" />}</button>{openCategory === category.id && (<div className="overflow-x-auto"><table className="w-full text-sm"><thead className="text-text-secondary"><tr><th className="p-3 text-left">ID</th><th className="p-3 text-left w-1/2">Name</th><th className="p-3 text-left">Rate / 1000</th><th className="p-3 text-left">Min/Max</th><th className="p-3 text-right">Action</th></tr></thead><tbody className="divide-y divide-border-color">{category.services.map(service => (<tr key={service.id}><td className="p-3 text-text-secondary">{service.id_api}</td><td className="p-3 text-text-primary font-medium"><div className="flex items-center gap-2">{service.name} <Info className="h-4 w-4 text-blue-400 cursor-pointer flex-shrink-0" onClick={(e) => {e.stopPropagation(); setServiceDetails(service);}} /></div><div className="flex flex-wrap gap-1 mt-1">{service.tags?.map(tag => <ServiceTag key={tag} tagName={tag} />)}</div></td><td className="p-3 text-green-600 font-semibold">{formatCurrency(service.rate)}</td><td className="p-3 text-text-secondary">{service.min} / {service.max}</td><td className="p-3 text-right"><button onClick={() => onOrderSelect(service, category.id)} className="bg-primary text-white px-4 py-1.5 rounded-full hover:bg-primary-hover text-xs font-bold transition">Order</button></td></tr>))}</tbody></table></div>)}</div>))}{filteredCategories.length === 0 && <div className="text-center py-10 bg-card rounded-lg shadow-md"><p className="text-text-secondary">No services found for your filters.</p></div>}</div>
         </div>
     );
 }
 
-function OrdersHistory({ orders, formatCurrency }) {
+function OrdersHistory({ user, orders, formatCurrency, showAlert }) {
+    const [isRefreshing, setIsRefreshing] = useState(false);
+
+    const handleRefresh = async () => {
+        setIsRefreshing(true);
+        try {
+            const token = await user.getIdToken();
+            const response = await fetch('/.netlify/functions/update-order-status', {
+                method: 'POST', // Use POST for triggering actions
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                },
+            });
+            const result = await response.json();
+            if (!response.ok) {
+                throw new Error(result.error || 'Failed to refresh statuses.');
+            }
+            showAlert("Success", "Order statuses have been updated.");
+        } catch (error) {
+            console.error("Error refreshing order statuses:", error);
+            showAlert("Error", error.message);
+        } finally {
+            setIsRefreshing(false);
+        }
+    };
+
     return (
         <div className="bg-card p-4 sm:p-6 rounded-lg shadow-md">
-            <h2 className="text-xl font-bold text-text-primary mb-4">Your Order History</h2>
-            <div className="overflow-x-auto"><table className="w-full text-sm text-left"><thead className="bg-background-alt text-text-secondary uppercase text-xs"><tr><th className="p-3">Order ID</th><th className="p-3 w-1/3">Service</th><th className="p-3">Link</th><th className="p-3">Charge</th><th className="p-3">Start Count</th><th className="p-3">Remains</th><th className="p-3 text-center">Status</th></tr></thead><tbody className="divide-y divide-border-color">{orders.map(order => (<tr key={order.id}><td className="p-3 font-mono text-text-primary">{order.orderId}</td><td className="p-3 text-text-primary font-medium">{order.serviceName}</td><td className="p-3 text-primary truncate max-w-xs hover:underline"><a href={order.link} target="_blank" rel="noopener noreferrer">{order.link}</a></td><td className="p-3 text-text-secondary">{formatCurrency(order.charge)}</td><td className="p-3 text-text-secondary">{order.start_count || 'N/A'}</td><td className="p-3 text-text-secondary">{order.remains || 'N/A'}</td><td className="p-3 text-center"><StatusBadge status={order.status} /></td></tr>))}</tbody></table>{orders.length === 0 && <div className="text-center py-10"><p className="text-text-secondary">You haven't placed any orders yet.</p></div>}</div>
+            <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold text-text-primary">Your Order History</h2>
+                <button 
+                    onClick={handleRefresh} 
+                    disabled={isRefreshing}
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-primary text-white rounded-lg hover:bg-primary-hover disabled:bg-slate-400 transition-colors"
+                >
+                    <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                    {isRefreshing ? 'Refreshing...' : 'Refresh Statuses'}
+                </button>
+            </div>
+            <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                    <thead className="bg-background-alt text-text-secondary uppercase text-xs">
+                        <tr>
+                            <th className="p-3">Order ID</th>
+                            <th className="p-3 w-1/3">Service</th>
+                            <th className="p-3">Link</th>
+                            <th className="p-3">Charge</th>
+                            <th className="p-3">Start Count</th>
+                            <th className="p-3">Remains</th>
+                            <th className="p-3 text-center">Status</th>
+                            <th className="p-3 text-center">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border-color">
+                        {orders.map(order => (
+                            <tr key={order.id}>
+                                <td className="p-3 font-mono text-text-primary">{order.providerOrderId || order.orderId}</td>
+                                <td className="p-3 text-text-primary font-medium">{order.serviceName}</td>
+                                <td className="p-3 text-primary truncate max-w-xs hover:underline">
+                                    <a href={order.link} target="_blank" rel="noopener noreferrer">{order.link}</a>
+                                </td>
+                                <td className="p-3 text-text-secondary">{formatCurrency(order.charge)}</td>
+                                <td className="p-3 text-text-secondary">{order.start_count ?? 'N/A'}</td>
+                                <td className="p-3 text-text-secondary">{order.remains ?? 'N/A'}</td>
+                                <td className="p-3 text-center"><StatusBadge status={order.status} /></td>
+                                <td className="p-3 text-center space-x-2">
+                                    {order.providerAllowsRefill && <button className="text-xs bg-blue-500 text-white px-2 py-1 rounded">Refill</button>}
+                                    {order.providerAllowsCancel && <button className="text-xs bg-red-500 text-white px-2 py-1 rounded">Cancel</button>}
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+                {orders.length === 0 && (
+                    <div className="text-center py-10">
+                        <p className="text-text-secondary">You haven't placed any orders yet.</p>
+                    </div>
+                )}
+            </div>
         </div>
     );
 }
 
-// --- NEW ORDER PAGE (FIX) ---
-// ... (Component remains largely the same, but now uses formatCurrency)
-function NewOrderPage({ service, userBalance, onSubmit, onBack, formatCurrency, showAlert }) {
+function NewOrderPage({ serviceInfo, userBalance, onSubmit, onBack, formatCurrency, navigateTo }) {
+    const { service, categoryId } = serviceInfo || {};
     const [link, setLink] = useState('');
     const [quantity, setQuantity] = useState(service ? service.min : '');
     const [charge, setCharge] = useState(0);
@@ -1657,15 +1655,15 @@ function NewOrderPage({ service, userBalance, onSubmit, onBack, formatCurrency, 
         setIsSubmitting(true);
         try {
             await onSubmit({
-                serviceId: service.id_api,
+                categoryId: categoryId, // Pass categoryId
+                serviceId: service.id, // Pass Firestore Document ID
                 serviceName: service.name,
                 link,
                 quantity: numQuantity,
                 charge
             });
             setSuccess(true);
-            showAlert("Order Placed", "Your order has been placed successfully! You will be redirected to your order history.");
-            // The `placeNewOrder` function already handles navigation
+            // The placeNewOrder function now handles alerts and navigation.
         } catch (err) {
             setError(err.toString());
         } finally {
@@ -1716,8 +1714,6 @@ function NewOrderPage({ service, userBalance, onSubmit, onBack, formatCurrency, 
     );
 }
 
-// --- Support Page Component ---
-// ... (Component remains unchanged)
 function SupportPage({ user, showAlert }) {
     const [tickets, setTickets] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -1882,10 +1878,10 @@ function ProfileSettings({ user, userData }) {
         if (profilePic) {
             const formData = new FormData();
             formData.append('file', profilePic);
-            formData.append('upload_preset', "mubashir"); // Use your Cloudinary upload preset
+            formData.append('upload_preset', "YOUR_CLOUDINARY_UPLOAD_PRESET"); 
 
             try {
-                const response = await fetch(`https://api.cloudinary.com/v1_1/dis1ptaip/image/upload`, { // Use your Cloudinary cloud name
+                const response = await fetch(`https://api.cloudinary.com/v1_1/YOUR_CLOUDINARY_CLOUD_NAME/image/upload`, {
                     method: 'POST',
                     body: formData,
                 });
@@ -2030,44 +2026,6 @@ function SecuritySettings({ user }) {
     );
 }
 
-function ApiKeySettings({ userData }) {
-    const [apiKey, setApiKey] = useState(userData.apiKey || '');
-    const [copied, setCopied] = useState(false);
-
-    const regenerateApiKey = async () => {
-        const newKey = crypto.randomUUID();
-        const userRef = doc(db, 'users', userData.id);
-        await updateDoc(userRef, { apiKey: newKey });
-        setApiKey(newKey);
-    };
-
-    const copyToClipboard = () => {
-        navigator.clipboard.writeText(apiKey).then(() => {
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
-        });
-    }
-
-    return (
-        <div>
-            <h3 className="text-xl font-bold text-text-primary mb-2">Your API Key</h3>
-            <p className="text-text-secondary mb-4">Use this key to integrate our services with your own applications or panels.</p>
-            <div className="flex items-center gap-2 bg-background-alt p-2 rounded-md max-w-lg">
-                <KeyRound className="text-text-secondary" />
-                <input type="text" value={apiKey} readOnly className="flex-1 bg-transparent font-mono text-sm" />
-                <button onClick={copyToClipboard} className="p-2 hover:bg-border-color rounded-md">
-                    {copied ? <Check className="text-green-500 h-5 w-5" /> : <Copy className="h-5 w-5" />}
-                </button>
-            </div>
-            <div className="mt-6">
-                <button onClick={regenerateApiKey} className="text-sm font-semibold text-white bg-red-600 hover:bg-red-700 px-4 py-2 rounded-md">Regenerate API Key</button>
-                <p className="text-xs text-red-500 mt-2">Warning: Regenerating will disable your old key immediately.</p>
-            </div>
-        </div>
-    );
-}
-
-// --- Ranks & Rewards Page ---
 function RanksPage({ totalSpent, formatCurrency, user, userData, showAlert }) {
     const [ranks, setRanks] = useState([]);
     const [leaderboard, setLeaderboard] = useState([]);
@@ -2240,7 +2198,6 @@ function RanksPage({ totalSpent, formatCurrency, user, userData, showAlert }) {
     );
 }
 
-// --- Invite & Earn Page (REWRITTEN) ---
 function InviteAndEarnPage({ user, userData, formatCurrency, showAlert }) {
     const [withdrawalMethod, setWithdrawalMethod] = useState(userData?.withdrawalMethod || { name: 'Easypaisa', details: '', accountName: '' });
     const [withdrawalAmount, setWithdrawalAmount] = useState('');
@@ -2476,7 +2433,6 @@ function InviteAndEarnPage({ user, userData, formatCurrency, showAlert }) {
     );
 }
 
-// --- NEW Transactions Page ---
 function TransactionsPage({ user, formatCurrency }) {
     const [transactions, setTransactions] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -2506,7 +2462,7 @@ function TransactionsPage({ user, formatCurrency }) {
         const createdDate = createdAt?.toDate ? createdAt.toDate() : null;
 
         if (status === 'pending' && createdDate && (now.getTime() - createdDate.getTime()) > STALE_TRANSACTION_THRESHOLD_MS) {
-            return 'pending_stale'; // Custom status for stale pending transactions
+            return 'pending_stale'; 
         }
         return status;
     };
@@ -2567,13 +2523,12 @@ const StatusBadge = ({ status }) => {
         Resolved: 'bg-gray-100 text-gray-800', 'resolved': 'bg-gray-200 text-gray-800',
         rejected: 'bg-red-100 text-red-800',
         failed: 'bg-red-200 text-red-800',
-        pending_stale: 'bg-orange-100 text-orange-800', // New style for stale pending
+        pending_stale: 'bg-orange-100 text-orange-800',
     };
     const displayText = status === 'pending_stale' ? 'Pending (Stale)' : status;
     return (<span className={`px-2.5 py-1 text-xs font-semibold rounded-full capitalize ${statusMap[status] || 'bg-gray-100 text-gray-800'}`}>{displayText}</span>);
 };
 
-// --- NEW Service Tag Component ---
 const ServiceTag = ({ tagName }) => {
     const tagStyles = {
         'High Quality': 'bg-amber-100 text-amber-800',
@@ -2604,27 +2559,4 @@ const ServiceTag = ({ tagName }) => {
     );
 };
 
-
-// --- NEW Confirmation Modal ---
-function ConfirmationModal({ message, onConfirm, onCancel }) {
-    return (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-[100] p-4">
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-sm">
-                <div className="p-6 text-center">
-                    <AlertTriangle className="mx-auto h-12 w-12 text-yellow-500" />
-                    <h3 className="text-lg font-medium text-gray-900 mt-2">Are you sure?</h3>
-                    <p className="text-sm text-gray-500 mt-2">{message}</p>
-                </div>
-                <div className="p-4 bg-gray-50 flex justify-center gap-4">
-                    <button onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">
-                        Cancel
-                    </button>
-                    <button onClick={onConfirm} className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700">
-                        Confirm
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-}
 export default App;

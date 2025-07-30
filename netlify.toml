@@ -1,19 +1,24 @@
+# Build settings from your original file
 [build]
-  # This command uses yarn for a more reliable build
   command = "yarn install && yarn build"
-  # The output directory for Vite builds is 'dist'
   publish = "dist"
 
+# Function directory setting (already present)
 [functions]
   directory = "netlify/functions"
 
-# This rule proxies function calls and should come first
+# NEW: Scheduled function for updating order statuses
+# This tells Netlify to run the 'update-order-status' function every minute.
+[functions."update-order-status"]
+  schedule = "* * * * *"
+
+# Redirect rule for API functions from your original file
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
   status = 200
 
-# FIX: This rule handles SPA routing and must be the last rule in the file
+# Single Page Application (SPA) redirect rule - MUST BE LAST
 [[redirects]]
   from = "/*"
   to = "/index.html"
