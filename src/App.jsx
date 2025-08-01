@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createRoot } from 'react-dom/client';
 import {
     DollarSign, ShoppingCart, List, LogOut, ChevronDown, ChevronUp, User, Eye, EyeOff,
     Mail, Lock, X, CheckCircle, Clock, XCircle, RefreshCw, Wallet, Paperclip,
     AlertTriangle, Instagram, Facebook, Youtube, Twitter, MessageSquare, Music, Twitch, Linkedin,
-    LifeBuoy, Send, Settings, KeyRound, Copy, Check, TrendingUp, Users, ShieldCheck, Zap, Award, Star, Globe, History, Sparkles, Rocket, Gift, Trophy, CreditCard, Info, Bell, Circle, Filter, ArrowUpDown, Tag, Repeat
+    LifeBuoy, Send, Settings, KeyRound, Copy, Check, TrendingUp, Users, ShieldCheck, Zap, Award, Star, Globe, History, Sparkles, Rocket, Gift, Trophy, CreditCard, Info, Bell, Circle, Filter, ArrowUpDown, Tag, Repeat, Search
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import {
@@ -40,17 +41,9 @@ import {
 } from 'firebase/firestore';
 
 // --- Firebase Configuration ---
-// IMPORTANT: In a real production app, use environment variables for this configuration.
-const firebaseConfig = {
-    apiKey: "AIzaSyBgjU9fzFsfx6-gv4p0WWH77_U5BPk69A0",
-    authDomain: "smmp-4b3cc.firebaseapp.com",
-    projectId: "smmp-4b3cc",
-    storageBucket: "smmp-4b3cc.firebasestorage.app",
-    messagingSenderId: "43467456148",
-    appId: "1:43467456148:web:368b011abf362791edfe81",
-    measurementId: "G-Y6HBHEL742"
-};
-
+const firebaseConfig = typeof __firebase_config !== 'undefined' 
+    ? JSON.parse(__firebase_config) 
+    : { apiKey: "AIzaSyBgjU9fzFsfx6-gv4p0WWH77_U5BPk69A0", authDomain: "smmp-4b3cc.firebaseapp.com", projectId: "smmp-4b3cc", storageBucket: "smmp-4b3cc.firebasestorage.app", messagingSenderId: "43467456148", appId: "1:43467456148:web:368b011abf362791edfe81", measurementId: "G-Y6HBHEL742" };
 
 // --- Currency & Rate Constants ---
 const BASE_CURRENCY = 'PKR';
@@ -558,13 +551,13 @@ function LandingPage({ setView, template }) {
                     <div className="w-1/2 bg-cover bg-center" style={{backgroundImage: "url('https://placehold.co/1000x1200/3b82f6/ffffff?text=SMM')"}}></div>
                     <div className="w-1/2 flex flex-col items-center justify-center p-12">
                          <div className="w-full max-w-md">
-                            <h1 className="text-2xl font-bold text-blue-800 mb-4">GET GROW UP</h1>
-                            <h2 className="text-4xl font-bold text-gray-800 mb-2">Your Partner in Digital Growth</h2>
-                             <p className="text-gray-600 mb-6">We provide enterprise-level solutions to supercharge your social media strategy. Sign up to gain access to our exclusive services.</p>
-                             <button onClick={() => setView('auth')} className="bg-blue-700 text-white font-bold py-3 px-6 rounded-md hover:bg-blue-800 transition">
-                                 Login or Sign Up
-                             </button>
-                       </div>
+                             <h1 className="text-2xl font-bold text-blue-800 mb-4">GET GROW UP</h1>
+                             <h2 className="text-4xl font-bold text-gray-800 mb-2">Your Partner in Digital Growth</h2>
+                              <p className="text-gray-600 mb-6">We provide enterprise-level solutions to supercharge your social media strategy. Sign up to gain access to our exclusive services.</p>
+                              <button onClick={() => setView('auth')} className="bg-blue-700 text-white font-bold py-3 px-6 rounded-md hover:bg-blue-800 transition">
+                                  Login or Sign Up
+                              </button>
+                        </div>
                     </div>
                 </div>
             );
@@ -2635,5 +2628,27 @@ const ServiceTag = ({ tagName }) => {
         </span>
     );
 };
+
+function ConfirmationModal({ message, onConfirm, onCancel }) {
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-[100] p-4">
+            <div className="bg-card rounded-lg shadow-xl w-full max-w-sm">
+                <div className="p-6 text-center">
+                    <AlertTriangle className="mx-auto h-12 w-12 text-yellow-500" />
+                    <h3 className="text-lg font-medium text-text-primary mt-2">Are you sure?</h3>
+                    <p className="text-sm text-text-secondary mt-2">{message}</p>
+                </div>
+                <div className="p-4 bg-background-alt flex justify-center gap-4">
+                    <button onClick={onCancel} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">
+                        Cancel
+                    </button>
+                    <button onClick={onConfirm} className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700">
+                        Confirm
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
 
 export default App;
