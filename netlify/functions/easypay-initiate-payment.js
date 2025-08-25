@@ -17,6 +17,9 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 
 // Easypay Configuration from Environment Variables
+// --- UPDATED CREDENTIALS ---
+// Easypaisa Store ID: 579563
+// Easypaisa Hash Key: 579563 (Note: This is the same as Store ID, please confirm with Easypay if this is correct for a hash key)
 const EASYPAY_STORE_ID = process.env.EASYPAY_STORE_ID;
 const EASYPAY_HASH_KEY = process.env.EASYPAY_HASH_KEY;
 const EASYPAY_PLUGIN_INDEX_URL = process.env.EASYPAY_PLUGIN_INDEX_URL || 'https://easypay.easypaisa.com.pk/easypay/Index.jsf';
@@ -35,7 +38,7 @@ function encryptAES(text, key) {
         // This is a common workaround if the provided key isn't exactly 16 bytes.
         // A more robust solution would be to generate a proper key from a passphrase.
         encryptionKey = crypto.createHash('sha256').update(key).digest().slice(0, 16);
-        console.warn("EASYPAY_HASH_KEY length adjusted to 16 bytes for AES-128-ECB.");
+        console.warn("EASYPAY_HASH_KEY length adjusted to 16 bytes for AES-128-ECB. Original key length was:", Buffer.from(key, 'utf8').length);
     }
 
     const cipher = crypto.createCipheriv('aes-128-ecb', encryptionKey, null);
