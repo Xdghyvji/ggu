@@ -1,8 +1,8 @@
-// FILE: netlify/functions/easypay-initiate-payment.js
+// FILE: netlify/functions/easypay-initiate-payment.js (for Easypay)
 
 const admin = require('firebase-admin');
 const crypto = require('crypto');
-const querystring = require('querystring'); // For URL encoding parameters
+const querystring = require('querystring');
 
 // Initialize Firebase Admin SDK
 if (!admin.apps.length) {
@@ -16,33 +16,21 @@ if (!admin.apps.length) {
 }
 const db = admin.firestore();
 
-// Easypay Configuration from Environment Variables
-// --- UPDATED CREDENTIALS ---
-// Easypaisa Store ID: 579563
-// Easypaisa Hash Key: 19CETCKHODGT5CGF
 const EASYPAY_STORE_ID = process.env.EASYPAY_STORE_ID;
 const EASYPAY_HASH_KEY = process.env.EASYPAY_HASH_KEY;
 const EASYPAY_PLUGIN_INDEX_URL = process.env.EASYPAY_PLUGIN_INDEX_URL || 'https://easypay.easypaisa.com.pk/easypay/Index.jsf';
-const YOUR_APP_URL = process.env.YOUR_APP_URL; // Your Netlify deployed URL
+const YOUR_APP_URL = process.env.YOUR_APP_URL;
 
-// AES Encryption function as per Easypay guide (Page 21)
 function encryptAES(text, key) {
   try {
-    // Easypay guide implies AES/ECB/PKCS5Padding with a 128-bit key.
-    // Node.js crypto.createCipheriv expects key as Buffer and IV (initialization vector) for CBC/CFB modes.
-    // For ECB, IV is not used. Key length for AES-128 is 16 bytes.
-    
     let encryptionKey = Buffer.from(key, 'utf8');
     if (encryptionKey.length !== 16) {
-        // Pad or truncate key to 16 bytes (128 bits) if necessary.
-        // This is a common workaround if the provided key isn't exactly 16 bytes.
-        // A more robust solution would be to generate a proper key from a passphrase.
         encryptionKey = crypto.createHash('sha256').update(key).digest().slice(0, 16);
         console.warn("EASYPAY_HASH_KEY length adjusted to 16 bytes for AES-128-ECB. Original key length was:", Buffer.from(key, 'utf8').length);
     }
 
     const cipher = crypto.createCipheriv('aes-128-ecb', encryptionKey, null);
-    cipher.setAutoPadding(true); // PKCS5Padding is default for Node.js AES
+    cipher.setAutoPadding(true);
     let encrypted = cipher.update(text, 'utf8', 'base64');
     encrypted += cipher.final('base64');
     return encrypted;
@@ -68,7 +56,8 @@ exports.handler = async (event) => {
     const decodedToken = await admin.auth().verifyIdToken(idToken);
     const userId = decodedToken.uid;
 
-    const { amount, phoneNumber, email } = JSON.parse(event.body);
+    // Extract amount, phoneNumber, email, and paymentType from the request body
+    const { amount, phoneNumber, email, paymentType } = JSON.parse(event.body);
     const paymentAmount = parseFloat(amount);
 
     if (isNaN(paymentAmount) || paymentAmount <= 0) {
@@ -80,58 +69,45 @@ exports.handler = async (event) => {
 
     const appId = process.env.APP_ID || 'default-app-id';
 
-    // Generate a unique order reference number
     const orderRefNum = `ORDER-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
-    // Define callback URLs for Easypay
     const postBackURL1 = `${YOUR_APP_URL}/.netlify/functions/easypay-callback-1?orderRefNum=${orderRefNum}`;
     const postBackURL2 = `${YOUR_APP_URL}/.netlify/functions/easypay-ipn-handler`;
 
-    // Prepare parameters for Easypay (as per Page 8-9 of the guide)
     const easypayParams = {
-      amount: paymentAmount.toFixed(2), // Amount sent to Easypay should be 2 decimal places for display/processing
+      amount: paymentAmount.toFixed(2),
       storeId: EASYPAY_STORE_ID,
-      postBackURL: postBackURL1, // First callback URL (now includes orderRefNum)
+      postBackURL: postBackURL1,
       orderRefNum: orderRefNum,
-      autoRedirect: '0', // 0 = merchant redirects to final post back URL, 1 = Easypay redirects
-      paymentMethod: 'MA_PAYMENT_METHOD', // Assuming Mobile Account payment for now
+      autoRedirect: '0',
+      paymentMethod: 'MA_PAYMENT_METHOD',
       emailAddr: email || decodedToken.email,
       mobileNum: phoneNumber,
-      // expiryDate: 'YYYYMMDD HHMMSS', // Optional, can add if needed
     };
 
-    // Construct the string for merchantHashedReq (Page 21, Step 4)
-    // Easypay guide example: amount=10.0&autoRedirect=0&expiryDate=20150101 151515&orderRefNum=11001&postBackURL=http://localhost:9081/local/status.php&storeId=28
-    
-    // Create a temporary object for hashing, explicitly including/excluding based on Easypay's example
     const fieldsToHash = {
-      amount: paymentAmount.toFixed(1), // CRITICAL: Amount for HASHING must be 1 decimal point
+      amount: paymentAmount.toFixed(1),
       storeId: easypayParams.storeId,
       postBackURL: easypayParams.postBackURL,
       orderRefNum: easypayParams.orderRefNum,
       autoRedirect: easypayParams.autoRedirect,
-      // paymentMethod: easypayParams.paymentMethod, // Exclude from hash based on example
-      // emailAddr: easypayParams.emailAddr,       // Exclude from hash based on example
-      // mobileNum: easypayParams.mobileNum,       // Exclude from hash based on example
-      // expiryDate: 'YYYYMMDD HHMMSS', // Only include if actually sending and formatting correctly
     };
 
     const sortedFieldNames = Object.keys(fieldsToHash).sort();
     const hashString = sortedFieldNames.map(key => `${key}=${fieldsToHash[key]}`).join('&');
 
-    console.log("Hash String generated:", hashString); // Log the hash string for debugging
+    console.log("Hash String generated:", hashString);
 
     let merchantHashedReq;
     if (EASYPAY_HASH_KEY) {
       merchantHashedReq = encryptAES(hashString, EASYPAY_HASH_KEY);
       easypayParams.merchantHashedReq = merchantHashedReq;
-      console.log("Encrypted merchantHashedReq:", merchantHashedReq); // Log encrypted value
+      console.log("Encrypted merchantHashedReq:", merchantHashedReq);
     }
 
-    // Store pending transaction in Firestore
     const transactionRef = db.collection('artifacts').doc(appId)
                              .collection('users').doc(userId)
-                             .collection('transactions').doc(orderRefNum); // Use orderRefNum as doc ID
+                             .collection('transactions').doc(orderRefNum);
     await transactionRef.set({
       userId: userId,
       amount: paymentAmount,
@@ -140,25 +116,26 @@ exports.handler = async (event) => {
       orderRefNum: orderRefNum,
       phoneNumber: phoneNumber,
       email: email,
+      paymentType: paymentType, // Store payment type in transaction
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      easypayParams: easypayParams, // Store the params sent to Easypay
-      hashStringDebug: hashString, // Store hash string for debugging
+      easypayParams: easypayParams,
+      hashStringDebug: hashString,
     });
 
-    // Store IPN lookup for the second callback
     const ipnLookupRef = db.collection('ipn_lookups').doc(orderRefNum);
     await ipnLookupRef.set({
       userId: userId,
       transactionId: orderRefNum,
       phoneNumber: phoneNumber,
       email: email,
-      postBackURL2: postBackURL2, // Store the second callback URL for the first callback to use
+      paymentType: paymentType, // Store payment type for IPN handler
+      gateway: 'Easypaisa',
+      postBackURL2: postBackURL2,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    // Construct the final Easypay redirect URL
     const easypayRedirectUrl = `${EASYPAY_PLUGIN_INDEX_URL}?${querystring.encode(easypayParams)}`;
-    console.log("Redirecting to Easypay URL:", easypayRedirectUrl); // Log the final redirect URL
+    console.log("Redirecting to Easypay URL:", easypayRedirectUrl);
 
     return {
       statusCode: 200,

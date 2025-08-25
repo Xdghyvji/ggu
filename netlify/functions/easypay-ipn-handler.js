@@ -17,7 +17,6 @@ const db = admin.firestore();
 exports.handler = async (event) => {
   console.log('--- easypay-ipn-handler function invoked. ---');
 
-  // Easypay sends final status as GET parameters (Page 9, Step 2)
   if (event.httpMethod !== 'GET') {
     return { statusCode: 405, body: 'Method Not Allowed' };
   }
@@ -32,7 +31,6 @@ exports.handler = async (event) => {
   try {
     const appId = process.env.APP_ID || 'default-app-id';
 
-    // Find the IPN lookup to get userId and original transaction details
     const ipnLookupRef = db.collection('ipn_lookups').doc(orderRefNum);
     const ipnLookupDoc = await ipnLookupRef.get();
 
@@ -41,22 +39,22 @@ exports.handler = async (event) => {
       return { statusCode: 404, body: 'Transaction lookup not found.' };
     }
 
-    const { userId, phoneNumber, email } = ipnLookupDoc.data();
-    const transactionRef = db.collection('artifacts').doc(appId)
-                             .collection('users').doc(userId)
-                             .collection('transactions').doc(orderRefNum);
+    const { userId, paymentType, phoneNumber, email } = ipnLookupDoc.data(); // Retrieve paymentType
+    const userRef = db.collection("artifacts").doc(appId).collection("users").doc(userId);
+    const transactionRef = userRef.collection("transactions").doc(orderRefNum);
 
     await db.runTransaction(async (t) => {
+      const userDoc = await t.get(userRef);
       const transactionDoc = await t.get(transactionRef);
 
-      if (!transactionDoc.exists) {
-        console.error(`Easypay IPN Handler Error: Transaction document not found for orderRefNum: ${orderRefNum}.`);
-        throw new Error('Transaction document not found.');
+      if (!userDoc.exists || !transactionDoc.exists) {
+        console.error(`Easypay IPN Handler Error: User (${userId}) or Transaction (${orderRefNum}) document not found during transaction.`);
+        throw new Error('User or Transaction document not found.');
       }
 
       const currentStatus = transactionDoc.data().status;
+      const currentBalance = userDoc.data().balance || 0;
 
-      // Prevent double processing
       if (currentStatus === 'completed' || currentStatus === 'failed' || currentStatus === 'cancelled') {
         console.log(`Easypay IPN for ${orderRefNum} already processed with status: ${currentStatus}. Skipping.`);
         return;
@@ -64,13 +62,22 @@ exports.handler = async (event) => {
 
       const newStatus = status.toLowerCase() === 'success' ? 'completed' : 'failed';
 
+      if (newStatus === 'completed' && paymentType === 'fund_deposit') {
+        const amountToAdd = transactionDoc.data().amount; // Get original amount from transaction
+        const newBalance = currentBalance + amountToAdd;
+        t.update(userRef, { balance: newBalance }); // Update user's main balance
+        console.log(`User ${userId} balance updated to ${newBalance} for fund deposit.`);
+      }
+      // For 'package_activation', specific package logic would go here if needed.
+
       t.update(transactionRef, {
         status: newStatus,
         gatewayResponseStatus: status,
         gatewayResponseDescription: desc,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        phoneNumber: phoneNumber, // Ensure phone number is stored
-        email: email, // Ensure email is stored
+        phoneNumber: phoneNumber,
+        email: email,
+        paymentType: paymentType, // Ensure payment type is stored in final transaction
       });
 
       console.log(`Easypay IPN for order ${orderRefNum} updated to status: ${newStatus}`);

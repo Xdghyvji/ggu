@@ -133,13 +133,118 @@ const PackageCard = ({ pkg, onActivate, activatingPackageId, isAuthenticated, cu
   );
 };
 
+// AddFundsModal Component
+const AddFundsModal = ({ isOpen, onClose, onAddFunds, loading, customerPhoneNumber, setCustomerPhoneNumber }) => {
+  const [amount, setAmount] = useState(1); // Minimum 1 Rs
+  const [selectedGateway, setSelectedGateway] = useState('WorkupPay');
+
+  const handleAddFundsClick = () => {
+    if (amount < 1) {
+      alert("Minimum fund addition is 1 Rs.");
+      return;
+    }
+    if (!customerPhoneNumber || customerPhoneNumber === '+92' || !/^((\+92)|(0092))?-?(\d{3})?-?(\d{7})$|^0?3\d{2}-?\d{7}$/.test(customerPhoneNumber)) {
+      alert("Please enter a valid Pakistani mobile number.");
+      return;
+    }
+    onAddFunds(amount, customerPhoneNumber, selectedGateway);
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full">
+        <h2 className="text-3xl font-bold text-gray-800 mb-6 text-center">Add Funds to Your Wallet</h2>
+        
+        <div className="mb-4">
+          <label htmlFor="fund-amount" className="block text-gray-700 text-lg font-medium mb-2">
+            Amount (PKR):
+          </label>
+          <input
+            type="number"
+            id="fund-amount"
+            value={amount}
+            onChange={(e) => setAmount(Math.max(1, parseFloat(e.target.value)))} // Enforce minimum 1 Rs
+            min="1"
+            className="w-full p-3 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-lg"
+            disabled={loading}
+          />
+          <p className="text-sm text-gray-500 mt-1">Minimum fund addition is 1 Rs.</p>
+        </div>
+
+        <div className="mb-6">
+          <label htmlFor="mobile-num-funds" className="block text-gray-700 text-lg font-medium mb-2">
+            Your Mobile Number:
+          </label>
+          <input
+            type="tel"
+            id="mobile-num-funds"
+            value={customerPhoneNumber}
+            onChange={(e) => setCustomerPhoneNumber(e.target.value)}
+            className="w-full p-3 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-lg"
+            placeholder="e.g., +923001234567"
+            disabled={loading}
+          />
+          <p className="text-sm text-gray-500 mt-1">This number will be used for payment processing.</p>
+        </div>
+
+        <div className="mb-6">
+          <label className="block text-gray-700 text-lg font-medium mb-2">
+            Choose Payment Gateway:
+          </label>
+          <div className="flex justify-center space-x-4">
+            <button
+              onClick={() => setSelectedGateway('WorkupPay')}
+              className={`flex-1 py-3 px-6 rounded-lg text-lg font-semibold transition-colors duration-200 ${
+                selectedGateway === 'WorkupPay' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+              disabled={loading}
+            >
+              Workup Pay
+            </button>
+            <button
+              onClick={() => setSelectedGateway('Easypaisa')}
+              className={`flex-1 py-3 px-6 rounded-lg text-lg font-semibold transition-colors duration-200 ${
+                selectedGateway === 'Easypaisa' ? 'bg-green-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+              disabled={loading}
+            >
+              Easypaisa
+            </button>
+          </div>
+        </div>
+
+        <div className="flex justify-end space-x-4">
+          <button
+            onClick={onClose}
+            className="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-6 rounded-full transition-colors duration-200"
+            disabled={loading}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleAddFundsClick}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-full shadow-md transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={loading}
+          >
+            {loading ? 'Processing...' : `Add ${amount} Rs`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
 // App Component
 export default function App() {
   const [selectedCompany, setSelectedCompany] = useState(packagesData[0].company);
   const [authReady, setAuthReady] = useState(false);
   const [userId, setUserId] = useState(null);
-  const [userEmail, setUserEmail] = useState(null); // Store user email from Google login
-  const [transactions, setTransactions] = useState([]); // Balance removed
+  const [userEmail, setUserEmail] = useState(null);
+  const [userBalance, setUserBalance] = useState(0); // Re-introduced balance
+  const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
@@ -149,8 +254,9 @@ export default function App() {
   const [auth, setAuth] = useState(null);
   const [db, setDb] = useState(null);
 
-  const [customerPhoneNumber, setCustomerPhoneNumber] = useState('+92'); // New state for mandatory phone number input, default +92
-  const [currentHeroImageIndex, setCurrentHeroImageIndex] = useState(0); // For hero slider
+  const [customerPhoneNumber, setCustomerPhoneNumber] = useState('+92');
+  const [currentHeroImageIndex, setCurrentHeroImageIndex] = useState(0);
+  const [isAddFundsModalOpen, setIsAddFundsModalOpen] = useState(false); // State for Add Funds modal
 
   // Initialize Firebase
   useEffect(() => {
@@ -165,12 +271,12 @@ export default function App() {
       onAuthStateChanged(authInstance, (user) => {
         if (user) {
           setUserId(user.uid);
-          setUserEmail(user.email); // Set user email upon login
+          setUserEmail(user.email);
           setAuthReady(true);
         } else {
           setUserId(null);
           setUserEmail(null);
-          setAuthReady(true); // Auth service is ready, user just not logged in
+          setAuthReady(true);
         }
       });
     }
@@ -179,30 +285,30 @@ export default function App() {
   // Effect for hero image slider
   useEffect(() => {
     let sliderInterval;
-    if (!userId && authReady) { // Only run slider if not logged in and auth is ready
+    if (!userId && authReady) {
       sliderInterval = setInterval(() => {
-        setCurrentHeroImageIndex((prevIndex) => (prevIndex + 1) % heroLogos.length); // Use heroLogos length
-      }, 3000); // Change image every 3 seconds
+        setCurrentHeroImageIndex((prevIndex) => (prevIndex + 1) % heroLogos.length);
+      }, 3000);
     }
-    return () => clearInterval(sliderInterval); // Clean up interval on component unmount or login
-  }, [userId, authReady, heroLogos.length]); // Use heroLogos length here
+    return () => clearInterval(sliderInterval);
+  }, [userId, authReady, heroLogos.length]);
 
-  // Fetch user data (transactions) once auth is ready and userId is available
+  // Fetch user data (balance and transactions) once auth is ready and userId is available
   useEffect(() => {
     if (authReady && db && userId) {
-      // User profile document path: artifacts/appId/users/userId
       const userDocRef = doc(db, "artifacts", appId, "users", userId); 
 
       const unsubscribeProfile = onSnapshot(userDocRef, (docSnap) => {
         if (docSnap.exists()) {
-          setCustomerPhoneNumber(docSnap.data().customerPhoneNumber || '+92'); // Load saved phone number or default to +92
+          setUserBalance(docSnap.data().balance || 0); // Re-introduced balance
+          setCustomerPhoneNumber(docSnap.data().customerPhoneNumber || '+92');
         } else {
-          // If user profile doesn't exist, create it with default values
           setDoc(userDocRef, { 
+              balance: 0, // Initialize balance for new users
               createdAt: new Date(), 
-              email: auth.currentUser?.email || 'N/A', // Store email from Google Login
-              displayName: auth.currentUser?.displayName || 'N/A', // Store display name
-              customerPhoneNumber: '+92' // Initialize with default country code
+              email: auth.currentUser?.email || 'N/A',
+              displayName: auth.currentUser?.displayName || 'N/A',
+              customerPhoneNumber: '+92'
           }, { merge: true })
             .then(() => console.log("User profile created/merged."))
             .catch(e => console.error("Error setting user profile:", e));
@@ -212,7 +318,6 @@ export default function App() {
         setError("Failed to fetch user profile data.");
       });
 
-      // Transactions subcollection path: artifacts/appId/users/userId/transactions
       const transactionsColRef = collection(db, "artifacts", appId, "users", userId, "transactions");
       const q = query(transactionsColRef); 
 
@@ -220,10 +325,9 @@ export default function App() {
         const fetchedTransactions = snapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data(),
-          createdAt: doc.data().createdAt?.toDate().toLocaleString(), // Convert Firestore Timestamp to readable string
-          updatedAt: doc.data().updatedAt?.toDate().toLocaleString(), // Convert Firestore Timestamp to readable string
+          createdAt: doc.data().createdAt?.toDate().toLocaleString(),
+          updatedAt: doc.data().updatedAt?.toDate().toLocaleString(),
         }));
-        // Sort transactions in memory (e.g., by createdAt descending)
         fetchedTransactions.sort((a, b) => {
           const dateA = a.createdAt ? new Date(a.createdAt) : 0;
           const dateB = b.createdAt ? new Date(b.createdAt) : 0;
@@ -235,35 +339,33 @@ export default function App() {
         setError("Failed to fetch transactions.");
       });
 
-      // Handle URL parameters for payment status
       const params = new URLSearchParams(window.location.search);
       const paymentStatus = params.get('status');
       const orderRefNum = params.get('orderRefNum');
+      const gateway = params.get('gateway'); // New: for distinguishing gateway in success/cancel
 
       if (paymentStatus === 'success') {
-        setSuccessMessage('Payment completed successfully! Check your transactions below.');
+        setSuccessMessage(`Payment via ${gateway || 'gateway'} completed successfully! Your balance will update shortly.`);
         window.history.replaceState({}, document.title, window.location.pathname);
       } else if (paymentStatus === 'cancelled') {
-        setError('Payment was cancelled.');
+        setError(`Payment via ${gateway || 'gateway'} was cancelled.`);
         window.history.replaceState({}, document.title, window.location.pathname);
       } else if (paymentStatus === 'processing' && orderRefNum) {
         setSuccessMessage(`Payment for order ${orderRefNum} is being processed. Please wait...`);
         window.history.replaceState({}, document.title, window.location.pathname);
       }
 
-
       return () => {
         unsubscribeProfile();
         unsubscribeTransactions();
       };
     }
-  }, [authReady, db, userId, appId, auth]); // Added 'auth' to dependencies for profile creation to access currentUser
+  }, [authReady, db, userId, appId, auth]);
 
   const handleCompanyChange = (event) => {
     setSelectedCompany(event.target.value);
   };
 
-  // Function for Google Login
   const handleGoogleLogin = async () => {
     setError(null);
     setSuccessMessage(null);
@@ -281,7 +383,6 @@ export default function App() {
     }
   };
 
-  // Function for Logout
   const handleLogout = async () => {
     setError(null);
     setSuccessMessage(null);
@@ -289,11 +390,11 @@ export default function App() {
     try {
       await signOut(auth);
       setSuccessMessage("Logged out successfully!");
-      // Clear user-specific data
       setUserId(null);
       setUserEmail(null);
+      setUserBalance(0); // Reset balance on logout
       setTransactions([]);
-      setCustomerPhoneNumber('+92'); // Reset phone number to default on logout
+      setCustomerPhoneNumber('+92');
     } catch (err) {
       console.error("Error logging out:", err);
       setError(`Failed to log out: ${err.message}`);
@@ -302,61 +403,80 @@ export default function App() {
     }
   };
 
-  const handleActivatePackage = async (pkg) => {
+  const initiatePayment = async (amount, phoneNumber, gateway, paymentType) => {
     if (!userId || !auth || !auth.currentUser) {
-      setError("Please log in to activate a package.");
+      setError("Please log in to proceed.");
       return;
     }
-    // Basic validation for phone number format
     const pakistanPhoneNumberRegex = /^((\+92)|(0092))?-?(\d{3})?-?(\d{7})$|^0?3\d{2}-?\d{7}$/;
-    if (!customerPhoneNumber || customerPhoneNumber === '+92' || !pakistanPhoneNumberRegex.test(customerPhoneNumber)) {
-      setError("Please enter a valid Pakistani mobile number (e.g., +923001234567 or 03001234567) to activate the package.");
+    if (!phoneNumber || phoneNumber === '+92' || !pakistanPhoneNumberRegex.test(phoneNumber)) {
+      setError("Please enter a valid Pakistani mobile number (e.g., +923001234567 or 03001234567).");
       return;
     }
 
     setLoading(true);
-    setActivatingPackageId(pkg.id);
     setError(null);
     setSuccessMessage(null);
 
     try {
       const idToken = await auth.currentUser.getIdToken();
-      
-      // Call the new Easypay initiation function
-      const response = await fetch('/.netlify/functions/easypay-initiate-payment', {
+      let endpoint = '';
+      if (gateway === 'WorkupPay') {
+        endpoint = '/.netlify/functions/initiate-payment'; // Workup Pay function
+      } else if (gateway === 'Easypaisa') {
+        endpoint = '/.netlify/functions/easypay-initiate-payment'; // Easypay function
+      } else {
+        setError("Invalid payment gateway selected.");
+        setLoading(false);
+        return;
+      }
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${idToken}`,
         },
         body: JSON.stringify({
-          amount: pkg.price,
-          phoneNumber: customerPhoneNumber,
+          amount: amount,
+          phoneNumber: phoneNumber,
           email: userEmail,
+          paymentType: paymentType, // Pass payment type to backend
         }),
       });
 
       const result = await response.json();
 
       if (response.ok && result.paymentUrl) {
-        setSuccessMessage(`Initiating payment for ${pkg.duration} package. Redirecting to Easypay...`);
-        // Save the entered phone number to user's profile for future use
-        if (db && userId && customerPhoneNumber) {
+        setSuccessMessage(`Initiating payment via ${gateway} for ${amount} Rs. Redirecting...`);
+        if (db && userId && phoneNumber) {
           const userDocRef = doc(db, "artifacts", appId, "users", userId);
-          setDoc(userDocRef, { customerPhoneNumber: customerPhoneNumber }, { merge: true })
+          setDoc(userDocRef, { customerPhoneNumber: phoneNumber }, { merge: true })
             .catch(e => console.error("Error saving customer phone number:", e));
         }
-        window.location.href = result.paymentUrl; // Redirect to Easypay
+        window.location.href = result.paymentUrl;
       } else {
-        setError(result.error || 'Failed to initiate Easypay payment.');
+        setError(result.error || `Failed to initiate ${gateway} payment.`);
       }
     } catch (err) {
-      console.error('Easypay payment initiation error:', err);
-      setError('An error occurred while trying to activate the package via Easypay. Please try again.');
+      console.error(`Payment initiation error via ${gateway}:`, err);
+      setError(`An error occurred while trying to initiate payment via ${gateway}. Please try again.`);
     } finally {
       setLoading(false);
-      setActivatingPackageId(null);
     }
+  };
+
+  // Function to handle package activation
+  const handleActivatePackage = async (pkg) => {
+    setActivatingPackageId(pkg.id);
+    await initiatePayment(pkg.price, customerPhoneNumber, 'Easypaisa', 'package_activation'); // Default to Easypaisa for package
+    setActivatingPackageId(null);
+  };
+
+  // Function to handle adding funds
+  const handleAddFunds = async (amount, phoneNumber, gateway) => {
+    setIsAddFundsModalOpen(false); // Close modal immediately
+    await initiatePayment(amount, phoneNumber, gateway, 'fund_deposit');
   };
 
   const currentCompany = packagesData.find(
@@ -395,6 +515,14 @@ export default function App() {
 
       <MessageModal message={error} type="error" onClose={() => setError(null)} />
       <MessageModal message={successMessage} type="success" onClose={() => setSuccessMessage(null)} />
+      <AddFundsModal
+        isOpen={isAddFundsModalOpen}
+        onClose={() => setIsAddFundsModalOpen(false)}
+        onAddFunds={handleAddFunds}
+        loading={loading}
+        customerPhoneNumber={customerPhoneNumber}
+        setCustomerPhoneNumber={setCustomerPhoneNumber}
+      />
 
       {/* Header */}
       <header className="bg-gradient-to-r from-indigo-600 to-purple-700 text-white p-6 shadow-lg">
@@ -402,7 +530,19 @@ export default function App() {
           <h1 className="text-4xl font-bold mb-2 sm:mb-0">
             Get Grow Up Package Hub ✨
           </h1>
-          <nav>
+          <nav className="flex items-center space-x-4 mt-4 sm:mt-0">
+            {userId && (
+              <span className="text-lg font-semibold">Balance: Rs. {userBalance.toFixed(2)}</span>
+            )}
+            {userId && (
+              <button
+                onClick={() => setIsAddFundsModalOpen(true)}
+                className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-full shadow-md transition-colors duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={loading}
+              >
+                Add Funds
+              </button>
+            )}
             {userId ? (
               <button
                 onClick={handleLogout}
@@ -461,7 +601,7 @@ export default function App() {
                 disabled={loading}
               />
               <p className="text-sm text-gray-500 mt-2">
-                This number will be used for package activation with Easypaisa.
+                This number will be used for package activation and fund additions.
               </p>
             </div>
 
@@ -494,7 +634,7 @@ export default function App() {
                 <img
                   src={currentCompany.logo}
                   alt={`${currentCompany.company} Logo`}
-                  className="mx-auto mb-4 rounded-lg shadow-md border-2 border-gray-100 object-contain h-20 w-40" // Improved logo styling
+                  className="mx-auto mb-4 rounded-lg shadow-md border-2 border-gray-100 object-contain h-20 w-40"
                   onError={(e) => { e.target.onerror = null; e.target.src = `https://placehold.co/150x60/cccccc/333333?text=${currentCompany.company}`; }}
                 />
                 <h2 className="text-3xl font-bold text-gray-700 mb-6">
@@ -533,14 +673,15 @@ export default function App() {
                     <li key={trx.id} className="py-4 flex flex-col sm:flex-row justify-between items-start sm:items-center">
                       <div>
                         <p className="text-lg font-medium text-gray-900">
-                          {trx.status === 'completed' ? 'Deposit' : 'Transaction'} of Rs. {trx.amount.toFixed(2)}
+                          {trx.paymentType === 'fund_deposit' ? 'Fund Deposit' : 'Package Activation'} of Rs. {trx.amount.toFixed(2)}
                         </p>
                         <p className="text-sm text-gray-500">
                           Status: <span className={`font-semibold ${trx.status === 'completed' ? 'text-green-600' : trx.status === 'pending' ? 'text-yellow-600' : 'text-red-600'}`}>{trx.status}</span>
                         </p>
-                        {trx.gatewayResponseStatus && <p className="text-sm text-gray-500">Easypaisa Status: {trx.gatewayResponseStatus}</p>}
+                        {trx.gatewayResponseStatus && <p className="text-sm text-gray-500">Gateway Status: {trx.gatewayResponseStatus}</p>}
                         {trx.gatewayResponseDescription && <p className="text-sm text-gray-500">Description: {trx.gatewayResponseDescription}</p>}
                         {trx.phoneNumber && <p className="text-sm text-gray-500">Phone: {trx.phoneNumber}</p>} 
+                        {trx.gateway && <p className="text-sm text-gray-500">Via: {trx.gateway}</p>}
                       </div>
                       <div className="text-right text-sm text-gray-500 mt-2 sm:mt-0">
                         <p>Initiated: {trx.createdAt}</p>
@@ -556,16 +697,16 @@ export default function App() {
           </div>
         ) : ( // If userId is null (not logged in) AND authReady is true, show login page
           authReady && (
-            <div className="login-page max-w-4xl mx-auto my-12 bg-white rounded-2xl shadow-xl p-8 text-center"> {/* Increased max-w */}
+            <div className="login-page max-w-4xl mx-auto my-12 bg-white rounded-2xl shadow-xl p-8 text-center">
               {/* Hero Section with Slider */}
-              <section className="hero-section mb-8 relative overflow-hidden rounded-lg shadow-md bg-gradient-to-r from-blue-500 to-purple-600"> {/* Added background gradient */}
-                <div className="relative h-72 w-full"> {/* Fixed height for slider */}
+              <section className="hero-section mb-8 relative overflow-hidden rounded-lg shadow-md bg-gradient-to-r from-blue-500 to-purple-600">
+                <div className="relative h-72 w-full">
                   {heroLogos.map((logo, index) => (
                     <img
                       key={index}
                       src={logo.src}
                       alt={logo.alt}
-                      className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 object-contain h-40 w-60 p-4 bg-white rounded-lg shadow-lg transition-opacity duration-1000 ${index === currentHeroImageIndex ? 'opacity-100' : 'opacity-0'}`} // Centered, larger, white background
+                      className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 object-contain h-40 w-60 p-4 bg-white rounded-lg shadow-lg transition-opacity duration-1000 ${index === currentHeroImageIndex ? 'opacity-100' : 'opacity-0'}`}
                     />
                   ))}
                 </div>
