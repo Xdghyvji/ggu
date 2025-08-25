@@ -28,11 +28,20 @@ exports.handler = async (event) => {
     return { statusCode: 405, body: 'Method Not Allowed' };
   }
 
+  // Log all received query parameters for debugging
+  console.log('Received query parameters:', event.queryStringParameters);
+
   const { auth_token, orderRefNum } = event.queryStringParameters;
 
   if (!auth_token || !orderRefNum) {
-    console.error('Easypay Callback 1 Error: Missing auth_token or orderRefNum.');
-    return { statusCode: 400, body: 'Missing parameters from Easypay callback.' };
+    console.error('Easypay Callback 1 Error: Missing auth_token or orderRefNum in query parameters.');
+    // Redirect user to a generic error page with more detail
+    return {
+      statusCode: 302,
+      headers: {
+        'Location': `${YOUR_APP_URL}/transactions?status=failed&reason=callback_params_missing&authTokenReceived=${!!auth_token}&orderRefNumReceived=${!!orderRefNum}`,
+      },
+    };
   }
 
   try {
