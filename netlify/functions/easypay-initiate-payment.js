@@ -55,9 +55,19 @@ exports.handler = async (event) => {
     const orderId = `ORDER-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
     // Create SOAP client
-    // The createClientAsync function can take an options object for security settings if needed
     const client = await soap.createClientAsync(EASYPAY_SOAP_WSDL_URL);
     console.log('SOAP client created.');
+
+    // Temporarily log the client's last request for debugging
+    client.on('request', function (xml) {
+        console.log('SOAP Request XML:', xml);
+    });
+    client.on('response', function (xml) {
+        console.log('SOAP Response XML (raw):', xml);
+    });
+    client.on('fault', function (fault) {
+        console.error('SOAP Fault:', fault);
+    });
 
     // Prepare SOAP request parameters for initiateTransaction (Page 13 of guide)
     const soapArgs = {
