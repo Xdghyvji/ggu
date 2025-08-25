@@ -87,15 +87,13 @@ exports.handler = async (event) => {
     const result = await client.initiateTransactionAsync(soapArgs);
     
     // --- FIX START ---
-    // Access the response directly from the result object, often under the method name
-    // Based on the raw XML, it should be result[0].initiateTransactionResponseType
-    // However, node-soap often unwraps it further. Let's try direct access first.
+    // Access the response directly from the first element of the result array
+    // The raw XML indicates the structure is directly under initiateTransactionResponseType
+    // node-soap often unwraps this to be directly available in result[0]
     let response;
-    if (result && result[0] && result[0].initiateTransactionResponseType) {
-        response = result[0].initiateTransactionResponseType;
-    } else if (result && result.initiateTransactionResponse && result.initiateTransactionResponse.initiateTransactionResponseType) {
-        // Alternative path if node-soap wraps it differently
-        response = result.initiateTransactionResponse.initiateTransactionResponseType;
+    if (result && result[0]) {
+        // Assuming result[0] is the parsed response object, e.g., { responseCode: '0010', storeId: 0 }
+        response = result[0];
     } else {
         // Fallback or error if expected structure isn't found
         console.error('Unexpected SOAP response structure:', JSON.stringify(result));
@@ -103,7 +101,7 @@ exports.handler = async (event) => {
     }
     // --- FIX END ---
 
-    console.log('Easypay SOAP initiateTransaction response:', response);
+    console.log('Easypay SOAP initiateTransaction response (parsed):', response);
 
     // Now check response.responseCode
     if (response.responseCode === '0000') { // Success
