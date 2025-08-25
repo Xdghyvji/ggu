@@ -2,7 +2,7 @@
 
 const admin = require('firebase-admin');
 const crypto = require('crypto');
-const querystring = require('querystring'); // For URL encoding parameters
+const querystring = require('querystring');
 
 // Initialize Firebase Admin SDK
 if (!admin.apps.length) {
@@ -68,16 +68,16 @@ exports.handler = async (event) => {
     const orderRefNum = `ORDER-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
     // Define callback URLs for Easypay
-    const postBackURL1 = `${YOUR_APP_URL}/.netlify/functions/easypay-callback-1`;
-    // The second postBackURL is passed in the first callback, but we define it here for clarity
+    // MODIFICATION: Embed orderRefNum into the first postBackURL
+    const postBackURL1 = `${YOUR_APP_URL}/.netlify/functions/easypay-callback-1?orderRefNum=${orderRefNum}`;
     const postBackURL2 = `${YOUR_APP_URL}/.netlify/functions/easypay-ipn-handler`;
 
     // Prepare parameters for Easypay (as per Page 8-9 of the guide)
     const easypayParams = {
       amount: paymentAmount.toFixed(2), // Amount must be in 2 decimal points
       storeId: EASYPAY_STORE_ID,
-      postBackURL: postBackURL1, // First callback URL
-      orderRefNum: orderRefNum,
+      postBackURL: postBackURL1, // First callback URL (now includes orderRefNum)
+      orderRefNum: orderRefNum, // Still send as a separate param to Easypay
       autoRedirect: '0', // 0 = merchant redirects to final post back URL, 1 = Easypay redirects
       paymentMethod: 'MA_PAYMENT_METHOD', // Assuming Mobile Account payment for now
       emailAddr: email || decodedToken.email,
