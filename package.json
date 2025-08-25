@@ -1,5 +1,5 @@
 {
-  "name": "smm-panel-final",
+  "name": "pakages-hub",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -12,13 +12,13 @@
   "dependencies": {
     "axios": "^1.11.0",
     "firebase": "^10.12.2",
-    "firebase-admin": "^12.7.0",
     "lucide-react": "^0.395.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-helmet-async": "^2.0.5",
     "react-router-dom": "^7.7.1",
-    "recharts": "^2.12.7"
+    "recharts": "^2.12.7",
+    "soap": "^1.0.0"  
   },
   "devDependencies": {
     "@types/react": "^18.3.3",
