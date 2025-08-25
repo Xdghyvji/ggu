@@ -19,7 +19,7 @@ const db = admin.firestore();
 // Easypay Configuration from Environment Variables
 // --- UPDATED CREDENTIALS ---
 // Easypaisa Store ID: 579563
-// Easypaisa Hash Key: 579563 (Note: This is the same as Store ID, please confirm with Easypay if this is correct for a hash key)
+// Easypaisa Hash Key: 19CETCKHODGT5CGF
 const EASYPAY_STORE_ID = process.env.EASYPAY_STORE_ID;
 const EASYPAY_HASH_KEY = process.env.EASYPAY_HASH_KEY;
 const EASYPAY_PLUGIN_INDEX_URL = process.env.EASYPAY_PLUGIN_INDEX_URL || 'https://easypay.easypaisa.com.pk/easypay/Index.jsf';
