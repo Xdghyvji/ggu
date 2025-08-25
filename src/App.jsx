@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react'; // Added useRef
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from 'firebase/auth';
 import { getFirestore, doc, collection, query, onSnapshot, setDoc } from 'firebase/firestore';
@@ -258,6 +258,8 @@ export default function App() {
   const [currentHeroImageIndex, setCurrentHeroImageIndex] = useState(0);
   const [isAddFundsModalOpen, setIsAddFundsModalOpen] = useState(false); // State for Add Funds modal
 
+  const pollingIntervalRef = useRef(null); // Ref to store polling interval ID
+
   // Initialize Firebase
   useEffect(() => {
     if (!firebaseApp && Object.keys(firebaseConfig).length > 0) {
@@ -353,14 +355,67 @@ export default function App() {
       } else if (paymentStatus === 'processing' && orderRefNum) {
         setSuccessMessage(`Payment for order ${orderRefNum} is being processed. Please wait...`);
         window.history.replaceState({}, document.title, window.location.pathname);
+        // If it's an Easypaisa SOAP transaction, start polling
+        if (gateway === 'Easypaisa_SOAP') {
+            startEasypaySoapPolling(orderRefNum);
+        }
       }
 
       return () => {
+        clearInterval(pollingIntervalRef.current); // Clear any active polling
         unsubscribeProfile();
         unsubscribeTransactions();
       };
     }
   }, [authReady, db, userId, appId, auth]);
+
+  // Function to poll Easypay SOAP transaction status
+  const startEasypaySoapPolling = (orderId) => {
+    if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current); // Clear existing polling if any
+    }
+
+    const pollStatus = async () => {
+        if (!userId || !auth || !auth.currentUser) {
+            clearInterval(pollingIntervalRef.current);
+            return;
+        }
+        try {
+            const idToken = await auth.currentUser.getIdToken();
+            const response = await fetch('/.netlify/functions/easypay-inquire-transaction', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${idToken}`,
+                },
+                body: JSON.stringify({ orderId: orderId }),
+            });
+            const result = await response.json();
+
+            if (response.ok && result.newAppStatus) {
+                if (result.newAppStatus === 'completed' || result.newAppStatus === 'failed') {
+                    setSuccessMessage(`Easypay transaction for ${orderId} is ${result.newAppStatus}.`);
+                    clearInterval(pollingIntervalRef.current); // Stop polling
+                    // Optionally, redirect to transactions page or refresh data
+                } else {
+                    console.log(`Polling Easypay for ${orderId}: ${result.newAppStatus}...`);
+                }
+            } else {
+                console.error(`Error polling Easypay for ${orderId}:`, result.error);
+                setError(`Error polling Easypay for ${orderId}: ${result.error}`);
+                clearInterval(pollingIntervalRef.current); // Stop polling on error
+            }
+        } catch (err) {
+            console.error(`Polling Easypay failed for ${orderId}:`, err);
+            setError(`Polling Easypay failed for ${orderId}.`);
+            clearInterval(pollingIntervalRef.current); // Stop polling on network error
+        }
+    };
+
+    pollingIntervalRef.current = setInterval(pollStatus, 10000); // Poll every 10 seconds
+    setSuccessMessage(`Started polling Easypay status for order ${orderId}.`);
+  };
+
 
   const handleCompanyChange = (event) => {
     setSelectedCompany(event.target.value);
@@ -395,6 +450,7 @@ export default function App() {
       setUserBalance(0); // Reset balance on logout
       setTransactions([]);
       setCustomerPhoneNumber('+92');
+      clearInterval(pollingIntervalRef.current); // Clear polling on logout
     } catch (err) {
       console.error("Error logging out:", err);
       setError(`Failed to log out: ${err.message}`);
@@ -421,10 +477,14 @@ export default function App() {
     try {
       const idToken = await auth.currentUser.getIdToken();
       let endpoint = '';
+      let isRedirectGateway = false;
+
       if (gateway === 'WorkupPay') {
-        endpoint = '/.netlify/functions/initiate-payment'; // Workup Pay function
-      } else if (gateway === 'Easypaisa') {
-        endpoint = '/.netlify/functions/easypay-initiate-payment'; // Easypay function
+        endpoint = '/.netlify/functions/initiate-payment';
+        isRedirectGateway = true;
+      } else if (gateway === 'Easypaisa') { // This is now for SOAP Easypaisa
+        endpoint = '/.netlify/functions/easypay-initiate-payment';
+        isRedirectGateway = false; // SOAP is server-to-server, no frontend redirect
       } else {
         setError("Invalid payment gateway selected.");
         setLoading(false);
@@ -441,20 +501,28 @@ export default function App() {
           amount: amount,
           phoneNumber: phoneNumber,
           email: userEmail,
-          paymentType: paymentType, // Pass payment type to backend
+          paymentType: paymentType,
         }),
       });
 
       const result = await response.json();
 
-      if (response.ok && result.paymentUrl) {
-        setSuccessMessage(`Initiating payment via ${gateway} for ${amount} Rs. Redirecting...`);
-        if (db && userId && phoneNumber) {
-          const userDocRef = doc(db, "artifacts", appId, "users", userId);
-          setDoc(userDocRef, { customerPhoneNumber: phoneNumber }, { merge: true })
-            .catch(e => console.error("Error saving customer phone number:", e));
+      if (response.ok) {
+        if (isRedirectGateway && result.paymentUrl) {
+          setSuccessMessage(`Initiating payment via ${gateway} for ${amount} Rs. Redirecting...`);
+          if (db && userId && phoneNumber) {
+            const userDocRef = doc(db, "artifacts", appId, "users", userId);
+            setDoc(userDocRef, { customerPhoneNumber: phoneNumber }, { merge: true })
+              .catch(e => console.error("Error saving customer phone number:", e));
+          }
+          window.location.href = result.paymentUrl;
+        } else if (!isRedirectGateway && result.orderId) { // Easypaisa SOAP success
+            setSuccessMessage(`Easypay transaction initiated. Order ID: ${result.orderId}. Checking status...`);
+            // Redirect to a processing page to show status and potentially start polling
+            window.location.href = `${window.location.origin}/transactions?status=processing&orderRefNum=${result.orderId}&gateway=Easypaisa_SOAP`;
+        } else {
+            setError(result.error || `Failed to initiate ${gateway} payment. Unexpected response.`);
         }
-        window.location.href = result.paymentUrl;
       } else {
         setError(result.error || `Failed to initiate ${gateway} payment.`);
       }
@@ -469,7 +537,7 @@ export default function App() {
   // Function to handle package activation
   const handleActivatePackage = async (pkg) => {
     setActivatingPackageId(pkg.id);
-    await initiatePayment(pkg.price, customerPhoneNumber, 'Easypaisa', 'package_activation'); // Default to Easypaisa for package
+    await initiatePayment(pkg.price, customerPhoneNumber, 'Easypaisa', 'package_activation'); // Now uses SOAP Easypaisa
     setActivatingPackageId(null);
   };
 

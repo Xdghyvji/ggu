@@ -1,0 +1,13 @@
+{
+    "name": "netlify-functions",
+    "version": "1.0.0",
+    "description": "Netlify functions for Easypay and WorkupPay integration",
+    "main": "easypay-initiate-payment.js",
+    "dependencies": {
+      "firebase-admin": "^11.11.0",
+      "axios": "^1.6.0",
+      "querystring": "^0.2.1",
+      "crypto": "^1.0.1",
+      "soap": "^1.0.0"  
+    }
+  }

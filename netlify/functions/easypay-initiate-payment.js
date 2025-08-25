@@ -1,8 +1,7 @@
-// FILE: netlify/functions/easypay-initiate-payment.js (for Easypay)
+// FILE: netlify/functions/easypay-initiate-payment.js (SOAP)
 
 const admin = require('firebase-admin');
-const crypto = require('crypto');
-const querystring = require('querystring');
+const soap = require('soap'); // NEW: SOAP client library
 
 // Initialize Firebase Admin SDK
 if (!admin.apps.length) {
@@ -16,32 +15,16 @@ if (!admin.apps.length) {
 }
 const db = admin.firestore();
 
+// Easypay Configuration from Environment Variables for SOAP
 const EASYPAY_STORE_ID = process.env.EASYPAY_STORE_ID;
-const EASYPAY_HASH_KEY = process.env.EASYPAY_HASH_KEY;
-const EASYPAY_PLUGIN_INDEX_URL = process.env.EASYPAY_PLUGIN_INDEX_URL || 'https://easypay.easypaisa.com.pk/easypay/Index.jsf';
+const EASYPAY_API_USERNAME = process.env.EASYPAY_API_USERNAME; // DigitalWorkup
+const EASYPAY_API_PASSWORD = process.env.EASYPAY_API_PASSWORD; // 418ac87c31971a9c21da9d3ceb09f3a6
+const EASYPAY_SOAP_WSDL_URL = process.env.EASYPAY_SOAP_WSDL_URL || 'https://easypay.easypaisa.com.pk/easypay-service/PartnerBusinessService/META-INF/wsdl/partner/transaction/PartnerBusinessService.wsdl';
+
 const YOUR_APP_URL = process.env.YOUR_APP_URL;
 
-function encryptAES(text, key) {
-  try {
-    let encryptionKey = Buffer.from(key, 'utf8');
-    if (encryptionKey.length !== 16) {
-        encryptionKey = crypto.createHash('sha256').update(key).digest().slice(0, 16);
-        console.warn("EASYPAY_HASH_KEY length adjusted to 16 bytes for AES-128-ECB. Original key length was:", Buffer.from(key, 'utf8').length);
-    }
-
-    const cipher = crypto.createCipheriv('aes-128-ecb', encryptionKey, null);
-    cipher.setAutoPadding(true);
-    let encrypted = cipher.update(text, 'utf8', 'base64');
-    encrypted += cipher.final('base64');
-    return encrypted;
-  } catch (error) {
-    console.error("AES Encryption Error:", error);
-    throw new Error("Failed to encrypt data.");
-  }
-}
-
 exports.handler = async (event) => {
-  console.log('--- easypay-initiate-payment function invoked. ---');
+  console.log('--- easypay-initiate-payment (SOAP) function invoked. ---');
 
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: 'Method Not Allowed' };
@@ -56,7 +39,6 @@ exports.handler = async (event) => {
     const decodedToken = await admin.auth().verifyIdToken(idToken);
     const userId = decodedToken.uid;
 
-    // Extract amount, phoneNumber, email, and paymentType from the request body
     const { amount, phoneNumber, email, paymentType } = JSON.parse(event.body);
     const paymentAmount = parseFloat(amount);
 
@@ -69,84 +51,96 @@ exports.handler = async (event) => {
 
     const appId = process.env.APP_ID || 'default-app-id';
 
-    const orderRefNum = `ORDER-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    // Generate a unique order reference number
+    const orderId = `ORDER-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
-    const postBackURL1 = `${YOUR_APP_URL}/.netlify/functions/easypay-callback-1?orderRefNum=${orderRefNum}`;
-    const postBackURL2 = `${YOUR_APP_URL}/.netlify/functions/easypay-ipn-handler`;
+    // Create SOAP client
+    // The createClientAsync function can take an options object for security settings if needed
+    const client = await soap.createClientAsync(EASYPAY_SOAP_WSDL_URL);
+    console.log('SOAP client created.');
 
-    const easypayParams = {
-      amount: paymentAmount.toFixed(2),
-      storeId: EASYPAY_STORE_ID,
-      postBackURL: postBackURL1,
-      orderRefNum: orderRefNum,
-      autoRedirect: '0',
-      paymentMethod: 'MA_PAYMENT_METHOD',
-      emailAddr: email || decodedToken.email,
-      mobileNum: phoneNumber,
+    // Prepare SOAP request parameters for initiateTransaction (Page 13 of guide)
+    const soapArgs = {
+      username: EASYPAY_API_USERNAME,
+      password: EASYPAY_API_PASSWORD,
+      channel: 'Internet', // As per guide sample
+      orderId: orderId,
+      storeId: parseInt(EASYPAY_STORE_ID), // Store ID is Integer
+      transactionAmount: paymentAmount.toFixed(2), // SOAP API expects 2 decimal points
+      transactionType: 'MA', // Mobile Account transaction
+      msisdn: phoneNumber, // Customer's MSISDN
+      mobileAccountNo: phoneNumber, // Customer's Mobile Account # (often same as MSISDN for MA)
+      emailAddress: email || decodedToken.email,
     };
 
-    const fieldsToHash = {
-      amount: paymentAmount.toFixed(1),
-      storeId: easypayParams.storeId,
-      postBackURL: easypayParams.postBackURL,
-      orderRefNum: easypayParams.orderRefNum,
-      autoRedirect: easypayParams.autoRedirect,
-    };
+    console.log('Initiating Easypay SOAP transaction with args:', soapArgs);
+    const result = await client.initiateTransactionAsync(soapArgs);
+    const response = result[0].initiateTransactionResponseType; // Access the actual response
 
-    const sortedFieldNames = Object.keys(fieldsToHash).sort();
-    const hashString = sortedFieldNames.map(key => `${key}=${fieldsToHash[key]}`).join('&');
+    console.log('Easypay SOAP initiateTransaction response:', response);
 
-    console.log("Hash String generated:", hashString);
+    if (response.responseCode === '0000') { // Success
+      const transactionRef = db.collection('artifacts').doc(appId)
+                               .collection('users').doc(userId)
+                               .collection('transactions').doc(orderId); // Use orderId as doc ID
+      await transactionRef.set({
+        userId: userId,
+        amount: paymentAmount,
+        status: 'pending', // Initial status is pending, will be confirmed by inquireTransaction or IPN
+        gateway: 'Easypaisa_SOAP', // Indicate SOAP gateway
+        orderRefNum: orderId,
+        gatewayTransactionId: response.transactionId, // Easypay's internal transaction ID
+        phoneNumber: phoneNumber,
+        email: email,
+        paymentType: paymentType,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        easypaySoapResponse: response, // Store full SOAP response for debugging
+      });
 
-    let merchantHashedReq;
-    if (EASYPAY_HASH_KEY) {
-      merchantHashedReq = encryptAES(hashString, EASYPAY_HASH_KEY);
-      easypayParams.merchantHashedReq = merchantHashedReq;
-      console.log("Encrypted merchantHashedReq:", merchantHashedReq);
+      // For SOAP, there's no redirect to Easypay's page. The transaction is initiated server-side.
+      // We return a success message and the orderId for the frontend to potentially poll.
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          message: 'Easypay transaction initiated successfully.',
+          orderId: orderId,
+          transactionId: response.transactionId,
+          status: 'initiated', // Custom status for frontend
+          // No paymentUrl as there is no redirection
+        }),
+      };
+    } else {
+      // Easypay API returned an error code
+      const transactionRef = db.collection('artifacts').doc(appId)
+                               .collection('users').doc(userId)
+                               .collection('transactions').doc(orderId);
+      await transactionRef.set({
+        userId: userId,
+        amount: paymentAmount,
+        status: 'failed',
+        gateway: 'Easypaisa_SOAP', // Indicate SOAP gateway
+        orderRefNum: orderId,
+        phoneNumber: phoneNumber,
+        email: email,
+        paymentType: paymentType,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        easypaySoapResponse: response,
+        failureReason: `Easypay API Error: ${response.responseCode} - ${response.responseDescription || 'Unknown error'}`,
+      });
+
+      return {
+        statusCode: 500,
+        body: JSON.stringify({
+          error: `Easypay API Error: ${response.responseCode} - ${response.responseDescription || 'Unknown error'}`,
+        }),
+      };
     }
 
-    const transactionRef = db.collection('artifacts').doc(appId)
-                             .collection('users').doc(userId)
-                             .collection('transactions').doc(orderRefNum);
-    await transactionRef.set({
-      userId: userId,
-      amount: paymentAmount,
-      status: 'pending',
-      gateway: 'Easypaisa',
-      orderRefNum: orderRefNum,
-      phoneNumber: phoneNumber,
-      email: email,
-      paymentType: paymentType, // Store payment type in transaction
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      easypayParams: easypayParams,
-      hashStringDebug: hashString,
-    });
-
-    const ipnLookupRef = db.collection('ipn_lookups').doc(orderRefNum);
-    await ipnLookupRef.set({
-      userId: userId,
-      transactionId: orderRefNum,
-      phoneNumber: phoneNumber,
-      email: email,
-      paymentType: paymentType, // Store payment type for IPN handler
-      gateway: 'Easypaisa',
-      postBackURL2: postBackURL2,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-
-    const easypayRedirectUrl = `${EASYPAY_PLUGIN_INDEX_URL}?${querystring.encode(easypayParams)}`;
-    console.log("Redirecting to Easypay URL:", easypayRedirectUrl);
-
-    return {
-      statusCode: 200,
-      body: JSON.stringify({ paymentUrl: easypayRedirectUrl }),
-    };
-
   } catch (error) {
-    console.error('Error in easypay-initiate-payment:', error);
+    console.error('Error in easypay-initiate-payment (SOAP):', error);
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: error.message || 'An internal error occurred during Easypay initiation.' }),
+      body: JSON.stringify({ error: error.message || 'An internal error occurred during Easypay SOAP initiation.' }),
     };
   }
 };

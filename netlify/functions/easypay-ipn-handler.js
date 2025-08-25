@@ -1,4 +1,4 @@
-// FILE: netlify/functions/easypay-ipn-handler.js
+// FILE: netlify/functions/easypay-ipn-handler.js (SOAP - Passive IPN)
 
 const admin = require('firebase-admin');
 
@@ -15,17 +15,38 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 
 exports.handler = async (event) => {
-  console.log('--- easypay-ipn-handler function invoked. ---');
+  console.log('--- easypay-ipn-handler (SOAP) function invoked. ---');
 
-  if (event.httpMethod !== 'GET') {
+  // Easypay might send IPNs for SOAP transactions, but the format is not explicitly detailed in Open API section.
+  // Assuming it might still be GET parameters or a POST with a body.
+  // For now, we'll keep it expecting GET, but be aware this might need adjustment.
+
+  if (event.httpMethod !== 'GET' && event.httpMethod !== 'POST') { // Allow both GET and POST for IPN
     return { statusCode: 405, body: 'Method Not Allowed' };
   }
 
-  const { status, desc, orderRefNum } = event.queryStringParameters;
+  let params;
+  if (event.httpMethod === 'GET') {
+      params = event.queryStringParameters;
+  } else { // Assume POST with form-urlencoded or JSON
+      try {
+          params = JSON.parse(event.body); // Try JSON
+      } catch (e) {
+          params = new URLSearchParams(event.body); // Fallback to form-urlencoded
+          // Convert URLSearchParams to a plain object
+          const objParams = {};
+          for (const [key, value] of params.entries()) {
+              objParams[key] = value;
+          }
+          params = objParams;
+      }
+  }
 
-  if (!status || !orderRefNum) {
-    console.error('Easypay IPN Handler Error: Missing status or orderRefNum.');
-    return { statusCode: 400, body: 'Missing parameters from Easypay IPN.' };
+  const { status, desc, orderRefNum, transactionId: gatewayTransactionId } = params; // Easypay might send transactionId directly
+
+  if (!orderRefNum) {
+    console.error('Easypay IPN Handler Error: Missing orderRefNum in IPN.');
+    return { statusCode: 400, body: 'Missing orderRefNum from Easypay IPN.' };
   }
 
   try {
@@ -35,11 +56,11 @@ exports.handler = async (event) => {
     const ipnLookupDoc = await ipnLookupRef.get();
 
     if (!ipnLookupDoc.exists) {
-      console.error(`Easypay IPN Handler Error: IPN lookup not found for orderRefNum: ${orderRefNum}.`);
-      return { statusCode: 404, body: 'Transaction lookup not found.' };
+      console.warn(`Easypay IPN Handler Warning: IPN lookup not found for orderRefNum: ${orderRefNum}. Transaction might have been initiated via other means or already processed.`);
+      return { statusCode: 200, body: 'IPN received, but lookup not found (already processed or unknown).' }; // Respond 200 to Easypay
     }
 
-    const { userId, paymentType, phoneNumber, email } = ipnLookupDoc.data(); // Retrieve paymentType
+    const { userId, paymentType, phoneNumber, email } = ipnLookupDoc.data();
     const userRef = db.collection("artifacts").doc(appId).collection("users").doc(userId);
     const transactionRef = userRef.collection("transactions").doc(orderRefNum);
 
@@ -60,24 +81,27 @@ exports.handler = async (event) => {
         return;
       }
 
-      const newStatus = status.toLowerCase() === 'success' ? 'completed' : 'failed';
+      // Determine new status based on IPN. Easypay's SOAP inquireTransaction returns "PAID".
+      // Assuming IPN status might also be "PAID" or "SUCCESS".
+      const newStatus = (status && status.toLowerCase() === 'paid') || (status && status.toLowerCase() === 'success') ? 'completed' : 'failed';
 
       if (newStatus === 'completed' && paymentType === 'fund_deposit') {
         const amountToAdd = transactionDoc.data().amount; // Get original amount from transaction
         const newBalance = currentBalance + amountToAdd;
         t.update(userRef, { balance: newBalance }); // Update user's main balance
-        console.log(`User ${userId} balance updated to ${newBalance} for fund deposit.`);
+        console.log(`User ${userId} balance updated to ${newBalance} for fund deposit via Easypay SOAP IPN.`);
       }
-      // For 'package_activation', specific package logic would go here if needed.
 
       t.update(transactionRef, {
         status: newStatus,
-        gatewayResponseStatus: status,
-        gatewayResponseDescription: desc,
+        gatewayResponseStatus: status || 'N/A',
+        gatewayResponseDescription: desc || 'N/A',
+        gatewayTransactionId: gatewayTransactionId || transactionDoc.data().gatewayTransactionId || 'N/A', // Use IPN's transactionId if available
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         phoneNumber: phoneNumber,
         email: email,
-        paymentType: paymentType, // Ensure payment type is stored in final transaction
+        paymentType: paymentType,
+        easypayIpnRaw: params, // Store raw IPN for debugging
       });
 
       console.log(`Easypay IPN for order ${orderRefNum} updated to status: ${newStatus}`);
@@ -86,7 +110,7 @@ exports.handler = async (event) => {
     return { statusCode: 200, body: 'IPN processed successfully.' };
 
   } catch (error) {
-    console.error('Error in easypay-ipn-handler:', error);
+    console.error('Error in easypay-ipn-handler (SOAP):', error);
     return {
       statusCode: 500,
       body: JSON.stringify({ error: error.message || 'An internal error occurred during Easypay IPN processing.' }),
