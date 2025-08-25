@@ -85,10 +85,27 @@ exports.handler = async (event) => {
 
     console.log('Initiating Easypay SOAP transaction with args:', soapArgs);
     const result = await client.initiateTransactionAsync(soapArgs);
-    const response = result[0].initiateTransactionResponseType; // Access the actual response
+    
+    // --- FIX START ---
+    // Access the response directly from the result object, often under the method name
+    // Based on the raw XML, it should be result[0].initiateTransactionResponseType
+    // However, node-soap often unwraps it further. Let's try direct access first.
+    let response;
+    if (result && result[0] && result[0].initiateTransactionResponseType) {
+        response = result[0].initiateTransactionResponseType;
+    } else if (result && result.initiateTransactionResponse && result.initiateTransactionResponse.initiateTransactionResponseType) {
+        // Alternative path if node-soap wraps it differently
+        response = result.initiateTransactionResponse.initiateTransactionResponseType;
+    } else {
+        // Fallback or error if expected structure isn't found
+        console.error('Unexpected SOAP response structure:', JSON.stringify(result));
+        throw new Error('Unexpected SOAP response structure from Easypay.');
+    }
+    // --- FIX END ---
 
     console.log('Easypay SOAP initiateTransaction response:', response);
 
+    // Now check response.responseCode
     if (response.responseCode === '0000') { // Success
       const transactionRef = db.collection('artifacts').doc(appId)
                                .collection('users').doc(userId)
@@ -120,7 +137,7 @@ exports.handler = async (event) => {
         }),
       };
     } else {
-      // Easypay API returned an error code
+      // Easypay API returned an error code (e.g., 0010)
       const transactionRef = db.collection('artifacts').doc(appId)
                                .collection('users').doc(userId)
                                .collection('transactions').doc(orderId);
