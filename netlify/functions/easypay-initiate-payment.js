@@ -28,12 +28,7 @@ function encryptAES(text, key) {
     // Easypay guide implies AES/ECB/PKCS5Padding with a 128-bit key.
     // Node.js crypto.createCipheriv expects key as Buffer and IV (initialization vector) for CBC/CFB modes.
     // For ECB, IV is not used. Key length for AES-128 is 16 bytes.
-    // Ensure EASYPAY_HASH_KEY is 16 characters long if it's directly used as the key.
-    // If it's a passphrase, a KDF (Key Derivation Function) like PBKDF2 would be needed.
-    // Assuming EASYPAY_HASH_KEY is the raw 16-byte key.
     
-    // If the key is not exactly 16 bytes, it will cause an error.
-    // For now, let's ensure the key buffer is 16 bytes.
     let encryptionKey = Buffer.from(key, 'utf8');
     if (encryptionKey.length !== 16) {
         // Pad or truncate key to 16 bytes (128 bits) if necessary.
@@ -91,7 +86,7 @@ exports.handler = async (event) => {
 
     // Prepare parameters for Easypay (as per Page 8-9 of the guide)
     const easypayParams = {
-      amount: paymentAmount.toFixed(2), // Amount must be in 2 decimal points
+      amount: paymentAmount.toFixed(2), // Amount sent to Easypay should be 2 decimal places for display/processing
       storeId: EASYPAY_STORE_ID,
       postBackURL: postBackURL1, // First callback URL (now includes orderRefNum)
       orderRefNum: orderRefNum,
@@ -103,22 +98,19 @@ exports.handler = async (event) => {
     };
 
     // Construct the string for merchantHashedReq (Page 21, Step 4)
-    // Based on Easypay guide example: amount=10.0&autoRedirect=0&expiryDate=20150101 151515&orderRefNum=11001&postBackURL=http://localhost:9081/local/status.php&storeId=28
-    // We should include all parameters that are part of the request, except those explicitly excluded by Easypay.
-    // The example implies alphabetical sorting and URL-encoded key=value pairs.
+    // Easypay guide example: amount=10.0&autoRedirect=0&expiryDate=20150101 151515&orderRefNum=11001&postBackURL=http://localhost:9081/local/status.php&storeId=28
     
-    // Create a temporary object for hashing that includes all parameters Easypay might expect in the hash string.
-    // We will include parameters that are sent to Easypay.
+    // Create a temporary object for hashing, explicitly including/excluding based on Easypay's example
     const fieldsToHash = {
-      amount: easypayParams.amount,
+      amount: paymentAmount.toFixed(1), // CRITICAL: Amount for HASHING must be 1 decimal point
       storeId: easypayParams.storeId,
       postBackURL: easypayParams.postBackURL,
       orderRefNum: easypayParams.orderRefNum,
       autoRedirect: easypayParams.autoRedirect,
-      paymentMethod: easypayParams.paymentMethod,
-      emailAddr: easypayParams.emailAddr,
-      mobileNum: easypayParams.mobileNum,
-      // Add expiryDate if it's ever used
+      // paymentMethod: easypayParams.paymentMethod, // Exclude from hash based on example
+      // emailAddr: easypayParams.emailAddr,       // Exclude from hash based on example
+      // mobileNum: easypayParams.mobileNum,       // Exclude from hash based on example
+      // expiryDate: 'YYYYMMDD HHMMSS', // Only include if actually sending and formatting correctly
     };
 
     const sortedFieldNames = Object.keys(fieldsToHash).sort();
