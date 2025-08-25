@@ -238,14 +238,19 @@ export default function App() {
       // Handle URL parameters for payment status
       const params = new URLSearchParams(window.location.search);
       const paymentStatus = params.get('status');
+      const orderRefNum = params.get('orderRefNum');
+
       if (paymentStatus === 'success') {
         setSuccessMessage('Payment completed successfully! Check your transactions below.');
-        // Clean up URL to avoid re-showing message on refresh
         window.history.replaceState({}, document.title, window.location.pathname);
       } else if (paymentStatus === 'cancelled') {
         setError('Payment was cancelled.');
         window.history.replaceState({}, document.title, window.location.pathname);
+      } else if (paymentStatus === 'processing' && orderRefNum) {
+        setSuccessMessage(`Payment for order ${orderRefNum} is being processed. Please wait...`);
+        window.history.replaceState({}, document.title, window.location.pathname);
       }
+
 
       return () => {
         unsubscribeProfile();
@@ -317,7 +322,8 @@ export default function App() {
     try {
       const idToken = await auth.currentUser.getIdToken();
       
-      const response = await fetch('/.netlify/functions/initiate-payment', {
+      // Call the new Easypay initiation function
+      const response = await fetch('/.netlify/functions/easypay-initiate-payment', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -325,28 +331,28 @@ export default function App() {
         },
         body: JSON.stringify({
           amount: pkg.price,
-          phoneNumber: customerPhoneNumber, // Use the mandatory input field's value
-          email: userEmail // Pass email for Workup Pay if needed
+          phoneNumber: customerPhoneNumber,
+          email: userEmail,
         }),
       });
 
       const result = await response.json();
 
       if (response.ok && result.paymentUrl) {
-        setSuccessMessage(`Initiating payment for ${pkg.duration} package. Redirecting to Workup Pay...`);
+        setSuccessMessage(`Initiating payment for ${pkg.duration} package. Redirecting to Easypay...`);
         // Save the entered phone number to user's profile for future use
         if (db && userId && customerPhoneNumber) {
           const userDocRef = doc(db, "artifacts", appId, "users", userId);
           setDoc(userDocRef, { customerPhoneNumber: customerPhoneNumber }, { merge: true })
             .catch(e => console.error("Error saving customer phone number:", e));
         }
-        window.location.href = result.paymentUrl; // Redirect to Workup Pay
+        window.location.href = result.paymentUrl; // Redirect to Easypay
       } else {
-        setError(result.error || 'Failed to initiate payment.');
+        setError(result.error || 'Failed to initiate Easypay payment.');
       }
     } catch (err) {
-      console.error('Payment initiation error:', err);
-      setError('An error occurred while trying to activate the package. Please try again.');
+      console.error('Easypay payment initiation error:', err);
+      setError('An error occurred while trying to activate the package via Easypay. Please try again.');
     } finally {
       setLoading(false);
       setActivatingPackageId(null);
@@ -455,7 +461,7 @@ export default function App() {
                 disabled={loading}
               />
               <p className="text-sm text-gray-500 mt-2">
-                This number will be used for package activation with Workup Pay.
+                This number will be used for package activation with Easypaisa.
               </p>
             </div>
 
@@ -532,7 +538,8 @@ export default function App() {
                         <p className="text-sm text-gray-500">
                           Status: <span className={`font-semibold ${trx.status === 'completed' ? 'text-green-600' : trx.status === 'pending' ? 'text-yellow-600' : 'text-red-600'}`}>{trx.status}</span>
                         </p>
-                        {trx.gatewayTransactionId && <p className="text-sm text-gray-500">Gateway ID: {trx.gatewayTransactionId}</p>}
+                        {trx.gatewayResponseStatus && <p className="text-sm text-gray-500">Easypaisa Status: {trx.gatewayResponseStatus}</p>}
+                        {trx.gatewayResponseDescription && <p className="text-sm text-gray-500">Description: {trx.gatewayResponseDescription}</p>}
                         {trx.phoneNumber && <p className="text-sm text-gray-500">Phone: {trx.phoneNumber}</p>} 
                       </div>
                       <div className="text-right text-sm text-gray-500 mt-2 sm:mt-0">
